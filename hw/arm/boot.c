@@ -773,7 +773,6 @@ static void arm_load_kernel_notify(Notifier *notifier, void *data)
     CPUState *cs;
     int kernel_size;
     int initrd_size;
-    int is_linux = 0;
     uint64_t elf_entry, elf_low_addr, elf_high_addr;
     int elf_machine;
     hwaddr entry, kernel_load_offset;
@@ -783,6 +782,8 @@ static void arm_load_kernel_notify(Notifier *notifier, void *data)
     ARMCPU *cpu = n->cpu;
     struct arm_boot_info *info =
         container_of(n, struct arm_boot_info, load_kernel_notifier);
+
+    int is_linux = info->is_linux;
 
     /* The board code is not supposed to set secure_board_setup unless
      * running its code in secure mode is actually possible, and KVM
