@@ -25,7 +25,9 @@
 #include "standard-headers/linux/input.h"
 #include "qemu/config-file.h"
 
-/* Main board type
+
+/*
+ * Main board type
  */
 
 typedef struct RehostingBoardInfo {
@@ -66,15 +68,81 @@ do { fprintf(stderr, "rehosting_machine: " fmt "\n", ## __VA_ARGS__); } while (0
 
 
 static MemMapEntry memmap[MEM_REGION_COUNT];
+
 // Allocate enough for both SPI and PPI IRQs
 static int irqmap[NUM_IRQS + (GIC_INTERNAL * REHOSTING_MAX_CPUS)];
 
 typedef struct {
     QEMUTimer *timer;
-    int sockfd;
     qemu_irq spi[NUM_IRQS];
     qemu_irq ppi[REHOSTING_MAX_CPUS][GIC_INTERNAL];
 } machine_irqs;
+
+static void parse_mem_map(char *map_str)
+{
+    if (!map_str) {
+        error_report("No memory map specified!");
+        return;
+    }
+
+    // Format is "REGION_NAME 0xstart-0xend;..."
+    char *pos = strtok(map_str, ";");
+    while (pos) {
+        char name[64];
+        int type;
+        hwaddr start, end;
+
+        if (sscanf(pos, "%s %lx-%lx", name, &start, &end) == 3) {
+            /*
+             * "Dynamically" create memory regions for things that we may
+             * use QEMU's implementation for
+             */
+            
+            if (strcmp(name, "MEM") == 0)
+                type = MEM;
+            else if (strcmp(name, "NAND") == 0)
+                type = NAND;
+            else if (strcmp(name, "NAND_CONTROLLER") == 0)
+                type = NAND_CONTROLLER;
+            else if (strcmp(name, "DMAC") == 0)
+                type = DMAC;
+            else if (strcmp(name, "CPUPERIPHS") == 0)
+                type = CPUPERIPHS;
+            else if (strcmp(name, "GIC_DIST") == 0)
+                type = GIC_DIST;
+            else if (strcmp(name, "GIC_CPU") == 0)
+                type = GIC_CPU;
+            else if (strcmp(name, "GIC_V2M") == 0)
+                type = GIC_V2M;
+            else if (strcmp(name, "GIC_ITS") == 0)
+                type = GIC_ITS;
+            else if (strcmp(name, "GIC_REDIST") == 0)
+                type = GIC_REDIST;
+            else if (strcmp(name, "UART") == 0)
+                type = UART;
+            else if (strcmp(name, "GPIO") == 0)
+                type = GPIO;
+            else if (strcmp(name, "GP_TIMER0") == 0)
+                type = GP_TIMER0;
+            else if (strcmp(name, "GP_TIMER1") == 0)
+                type = GP_TIMER1;
+            else if (strcmp(name, "DG_TIMER") == 0)
+                type = DG_TIMER;
+            else {
+                error_report("Region '%s' doesn't exist", name);
+                pos = strtok(NULL, ";");
+                continue;
+            }
+
+            DEBUG("Adding region: %s @ 0x%lx-0x%lx\n", name, start, end);
+            memmap[type].base = start;
+            memmap[type].size = (end - start);
+        } else {
+            error_report("Error parsing memory region definition '%s'", pos);
+        }
+        pos = strtok(NULL, ";");
+    }
+}
 
 static void create_gic(RehostingBoardInfo *vbi, machine_irqs *irqs, int type, bool secure)
 {
@@ -132,9 +200,7 @@ static void mach_rehosting_init(MachineState *machine)
     vbi->memmap = memmap;
     vbi->irqmap = irqmap;
 
-    // RESEARCH: TODO: is this a fair assumption?
-    memmap[MEM].base = 0x40000000;
-    memmap[MEM].size = 0x40000000;
+    parse_mem_map(machine->mem_map_str);
 
     vbi->smp_cpus = smp_cpus;
 
@@ -179,8 +245,7 @@ static void mach_rehosting_init(MachineState *machine)
     vbi->bootinfo.kernel_cmdline = machine->kernel_cmdline;
     vbi->bootinfo.initrd_filename = machine->initrd_filename;
     vbi->bootinfo.nb_cpus = smp_cpus;
-    // RESEARCH: TODO: implement this
-    vbi->bootinfo.board_id = 4200;
+    vbi->bootinfo.board_id = machine->board_id;
 
     vbi->bootinfo.is_linux = true;
     vbi->bootinfo.loader_start = vbi->memmap[MEM].base;

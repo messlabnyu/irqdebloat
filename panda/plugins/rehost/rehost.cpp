@@ -22,7 +22,6 @@ PANDAENDCOMMENT */
 
 extern "C" {
 
-int before_block_callback(CPUState *env, TranslationBlock *tb);
 bool init_plugin(void *);
 void uninit_plugin(void *);
 
@@ -37,7 +36,7 @@ void set_last_device(device_t type)
     last_device_time = clock();
 }
 
-void printk_hook(CPUState *cpu)
+void print_hook(CPUState *cpu)
 {
     uint8_t buf[1024];
     CPUArchState *env = (CPUArchState*)cpu->env_ptr;
@@ -57,7 +56,8 @@ std::unordered_map<target_ulong, hook_func_t> hooks;
 std::map<std::string, target_ulong> kallsyms;
 
 std::map<std::string, hook_func_t> readable_hooks = {
-    {"printk", printk_hook},
+    {"printk", print_hook},
+    {"printascii", print_hook},
     {"init_IRQ", [](CPUState *cpu) { set_last_device(INTERRUPT_CONTROLLER_DIST); }},
     {"gic_cpu_init", [](CPUState *cpu) { set_last_device(INTERRUPT_CONTROLLER_CPU); }},
     {"uart_register_driver", [](CPUState *cpu) { set_last_device(UART_DEVICE); }},
@@ -97,13 +97,49 @@ void parse_sym_file(const char *sym_file)
     }
 }
 
-int before_block_callback(CPUState *cpu, TranslationBlock *tb)
+int before_block_exec(CPUState *cpu, TranslationBlock *tb)
 {
     auto hook = hooks.find(tb->pc);
     if (hook != hooks.end()) {
         (*hook->second)(cpu);
     }
 
+    return 0;
+}
+
+int check_unassigned_mem_r(CPUState *cpu, target_ulong pc, target_ulong addr, target_ulong size)
+{
+    MemoryRegion *subregion;
+    
+    QTAILQ_FOREACH(subregion, &cpu->memory->subregions, subregions_link) {
+        if (addr >= subregion->addr && addr < subregion->addr + subregion->size) {
+            // addr is in a defined memory region, so just let QEMU process it as normal
+            return 0;
+        }
+    }
+
+    // This memory read is not in any existing MemoryRegion, so report it to the master
+
+    printf("rehost: Unassigned read at 0x" TARGET_FMT_lx ". ", addr);
+    printf("Current last device: %u\n", last_device);
+    
+    return 0;
+}
+
+int check_unassigned_mem_w(CPUState *cpu, target_ulong pc, target_ulong addr,
+                           target_ulong size, void *buf)
+{
+    MemoryRegion *subregion;
+    
+    QTAILQ_FOREACH(subregion, &cpu->memory->subregions, subregions_link) {
+        if (subregion->addr <= addr && addr < subregion->addr + subregion->size) {
+            return 0;
+        }
+    }
+
+    printf("rehost: Unassigned write at 0x" TARGET_FMT_lx ". ", addr);
+    printf("Current last device: %u\n", last_device);
+    
     return 0;
 }
 
@@ -119,12 +155,21 @@ bool init_plugin(void *self)
     panda_arg_list *args;
     const char *sym_file;
 
-    cb.before_block_exec = before_block_callback;
+    panda_enable_memcb();
+
+    cb.before_block_exec = before_block_exec;
     panda_register_callback(self, PANDA_CB_BEFORE_BLOCK_EXEC, cb);
+    cb.virt_mem_before_read = check_unassigned_mem_r;
+    panda_register_callback(self, PANDA_CB_PHYS_MEM_BEFORE_READ, cb);
+    cb.virt_mem_before_write = check_unassigned_mem_w;
+    panda_register_callback(self, PANDA_CB_PHYS_MEM_BEFORE_WRITE, cb);
 
     args = panda_get_args("rehost");
+    
     sym_file = panda_parse_string_req(args, "sym_file", "File path of kallsyms dump");
     parse_sym_file(sym_file);
+
+    panda_free_args(args);
 
     return true;
 }

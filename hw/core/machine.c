@@ -332,6 +332,52 @@ static bool machine_get_enforce_config_section(Object *obj, Error **errp)
     return ms->enforce_config_section;
 }
 
+// RESEARCH: board ID (aka. machine ID)
+static void machine_get_board(Object *obj, Visitor *v,
+                              const char *name, void *opaque,
+                              Error **errp)
+{
+    MachineState *ms = MACHINE(obj);
+    int64_t value = ms->board_id;
+
+    visit_type_int(v, name, &value, errp);
+}
+
+static void machine_set_board(Object *obj, Visitor *v,
+                              const char *name, void *opaque,
+                              Error **errp)
+{
+    MachineState *ms = MACHINE(obj);
+    Error *error = NULL;
+    int64_t value;
+
+    visit_type_int(v, name, &value, &error);
+    if (error) {
+        error_propagate(errp, error);
+        return;
+    }
+
+    ms->board_id = value;
+}
+
+// RESEARCH: Memory map string
+static char *machine_get_mem_map_str(Object *obj, Error **errp)
+{
+    MachineState *ms = MACHINE(obj);
+
+    return g_strdup(ms->mem_map_str);
+}
+
+static void machine_set_mem_map_str(Object *obj, const char *value, Error **errp)
+{
+    MachineState *ms = MACHINE(obj);
+
+    g_free(ms->mem_map_str);
+    ms->mem_map_str = g_strdup(value);
+}
+
+
+
 static void error_on_sysbus_device(SysBusDevice *sbdev, void *opaque)
 {
     error_report("Option '-device %s' cannot be handled by this machine",
@@ -462,6 +508,22 @@ static void machine_class_init(ObjectClass *oc, void *data)
         &error_abort);
     object_class_property_set_description(oc, "enforce-config-section",
         "Set on to enforce configuration section migration", &error_abort);
+    
+    // RESEARCH
+    object_class_property_add(oc, "board-id", "int",
+                              machine_get_board,
+                              machine_set_board,
+                              NULL, NULL, NULL);
+    object_class_property_set_description(oc, "board-id",
+                                          "Set the board ID reported to Linux",
+                                          NULL);
+    
+    object_class_property_add_str(oc, "mem-map",
+                                  machine_get_mem_map_str,
+                                  machine_set_mem_map_str, NULL);
+    object_class_property_set_description(oc, "mem-map",
+                                          "Set the memory mapping",
+                                           NULL);
 }
 
 static void machine_class_base_init(ObjectClass *oc, void *data)
