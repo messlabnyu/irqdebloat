@@ -155,10 +155,10 @@ bool init_plugin(void *self)
     panda_arg_list *args;
     const char *sym_file;
 
-    panda_enable_memcb();
-
     cb.before_block_exec = before_block_exec;
     panda_register_callback(self, PANDA_CB_BEFORE_BLOCK_EXEC, cb);
+    
+    panda_enable_memcb();
     cb.virt_mem_before_read = check_unassigned_mem_r;
     panda_register_callback(self, PANDA_CB_PHYS_MEM_BEFORE_READ, cb);
     cb.virt_mem_before_write = check_unassigned_mem_w;
