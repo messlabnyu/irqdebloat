@@ -4,7 +4,7 @@
 #include "panda/plugin.h"
 
 enum device_t {
-    UNKNOWN_DEVICE,
+    UNKNOWN_DEVICE = 0,
     UART_DEVICE,
     TIMER_DEVICE,
     INTERRUPT_CONTROLLER_DIST,

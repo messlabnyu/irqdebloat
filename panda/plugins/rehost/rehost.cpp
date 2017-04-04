@@ -145,12 +145,6 @@ int check_unassigned_mem_w(CPUState *cpu, target_ulong pc, target_ulong addr,
 
 bool init_plugin(void *self)
 {
-    /*
-     * TODO:
-     *  parse board_id from dump_machine_table
-     *  figure out how to control vbi->bootinfo.board_id
-     */
-
     panda_cb cb;
     panda_arg_list *args;
     const char *sym_file;
