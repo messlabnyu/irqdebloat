@@ -1,0 +1,41 @@
+syntax = "proto2";
+package autoemu;
+
+enum PacketType {
+    SYMBOLS = 0;                // master->runner; map of symbol name to addr for breakpoints built into plugin
+    OLD_MEMORY_ACCESSES = 1;    // master->runner; map of memory addr -> list of past memory accesses/reponses
+    NEW_MEMORY_ACCESS = 2;      // runner->master; memory address, type (R/W), and value if write
+    CALL_TRACE = 3;             // runner->master; complete trace of all function calls in this run
+}
+
+message SymbolTable {
+    message Symbol {
+        required uint64 address = 1;
+        required string name = 2;
+    }
+    repeated Symbol symbols = 1;
+}
+
+// Used both to send old accesses to the runner on startup
+// and for the runner to send new accesses to the master
+message MemoryAccess {
+    required uint64 address = 1;
+
+    enum AccessType {
+        READ = 0;
+        WRITE = 1;
+    }
+    required AccessType type = 2;
+
+    optional uint64 value = 3;
+}
+
+message OldMemoryAccesses {
+    repeated MemoryAccess accesses = 1;
+}
+
+// Recursive definition for a call tree
+message SubCalls {
+    required uint64 address = 1;
+    repeated SubCalls called = 2;
+}

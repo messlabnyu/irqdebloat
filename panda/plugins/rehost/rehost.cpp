@@ -21,6 +21,7 @@ PANDAENDCOMMENT */
 #include <sstream>
 
 #include "rehost.h"
+#include "packets.pb.h"
 
 extern "C" {
 
@@ -28,6 +29,10 @@ bool init_plugin(void *);
 void uninit_plugin(void *);
 
 }
+
+
+// Connection stuff
+int master_sockfd;
 
 
 // State tracking
@@ -188,45 +193,148 @@ int check_unassigned_mem_w(CPUState *cpu, target_ulong pc, target_ulong addr,
  * Plugin initialization
  */
 
-void parse_sym_file(const char *sym_file)
+int recv_pkt(autoemu::PacketType type, std::string &pkt)
 {
-    std::ifstream file(sym_file);
-    std::string line;
-    int count = 0;
+    uint32_t recvd_type, pkt_len, read_len;
+    recvd_type = 0xffffffff;
+    pkt_len = 0;
+    read_len = 0;
+    char *c_pkt = 0;
 
-    // Parse out the symbol file (0xaddraddr T func_name)
-    while (std::getline(file, line)) {
-        std::stringstream linestream(line);
-        target_ulong addr;
-        std::string sym_name;
-
-        linestream >> std::hex >> addr;
-        linestream.ignore(3); // Ignore ' T '
-        getline(linestream, sym_name, ' ');
-        kallsyms[sym_name] = addr;
-        count++;
+    if (read(master_sockfd, &recvd_type, 4) != 4) {
+        DEBUG("Error reading packet type");
+        return -1;
     }
 
-    std::cout << "Parsed " << count << " symbols from " << sym_file << std::endl;
+    recvd_type = ntohl(recvd_type);
 
-    // Use the new symbol table to transform readable_hooks into hooks
-    for (auto hook = readable_hooks.begin(); hook != readable_hooks.end(); hook++) {
-        auto symbol = kallsyms.find(hook->first);
-        if (symbol != kallsyms.end()) {
-            auto sym_addr = symbol->second;
-            auto hook_func = hook->second;
-            hooks[sym_addr].push_back(hook_func);
-        } else {
-            std::cout << "WARNING: Function " << hook->first << " not in kallsyms" << std::endl;
+    if (recvd_type != type) {
+        DEBUG("Received unexpected type. Expected %d got %d", type, recvd_type);
+        return -2;
+    }
+
+    if (read(master_sockfd, &pkt_len, 4) != 4) {
+        DEBUG("Error reading packet length");
+        return -1;
+    }
+
+    pkt_len = ntohl(pkt_len);
+    if (pkt_len <= 0) {
+        DEBUG("Bad packet length recieved %d", pkt_len);
+        return -1;
+    }
+
+    c_pkt = (char*)malloc(pkt_len);
+    if (!c_pkt) {
+        DEBUG("Can't allocate memory for packet data");
+        return -1;
+    }
+
+    while (read_len < pkt_len) {
+        size_t read_this_round = 0;
+        if (!(read_this_round = read(master_sockfd, c_pkt+read_len, pkt_len-read_len))) {
+            DEBUG("Error reading packet. Read %d bytes, expected %d bytes", read_len, pkt_len);
+            free(c_pkt);
+            return -3;
         }
+        read_len += read_this_round;
     }
+
+    pkt = std::string(c_pkt, pkt_len);
+
+    return 0;
+}
+
+int recv_symtab()
+{
+    std::string pkt;
+
+    if (recv_pkt(autoemu::PacketType::SYMBOLS, pkt)) {
+        DEBUG("Error receiving SYMBOLS packet");
+        return -1;
+    }
+
+    autoemu::SymbolTable parsed_symtab;
+
+    if (!parsed_symtab.ParseFromString(pkt)) {
+        DEBUG("Error parsing SYMBOLS packet");
+        return -1;
+    }
+
+    for (autoemu::SymbolTable::Symbol sym : parsed_symtab.symbols()) {
+        kallsyms[sym.name()] = sym.address();
+    }
+
+    DEBUG("Received %zu symbols", kallsyms.size());
+    
+    return 0;
+}
+
+int recv_mem_accesses()
+{
+    std::string pkt;
+
+    if (recv_pkt(autoemu::PacketType::OLD_MEMORY_ACCESSES, pkt)) {
+        DEBUG("Error receiving OLD_MEMORY_ACCESSES packet");
+        return -1;
+    }
+
+    autoemu::OldMemoryAccesses parsed_accesses;
+
+    if (!parsed_accesses.ParseFromString(pkt)) {
+        DEBUG("Error parsing OLD_MEMORY_ACCESSES packet");
+        return -1;
+    }
+
+    // TODO: Save parsed_accesses
+
+    return 0;
+}
+
+int connect_master(const char *server_string, uint32_t session_id)
+{
+    struct sockaddr_in server;
+    master_sockfd = socket(AF_INET, SOCK_STREAM, 0);
+
+    if (master_sockfd < 0) {
+        fprintf(stderr, "panda_rehost: Couldn't create socket\n");
+        return -1;
+    }
+    
+    // Yes this is bad, no I don't care
+    char ip[16];
+    uint16_t port;
+    
+    if (sscanf(server_string, "%s %hu", ip, &port) != 2) {
+        fprintf(stderr, "panda_rehost: Error parsing master server string\n");
+        return -1;
+    }
+    
+    server.sin_addr.s_addr = inet_addr(ip);
+    server.sin_family = AF_INET;
+    server.sin_port = htons(port);
+
+    if (connect(master_sockfd, (sockaddr*)&server, sizeof(server)) < 0) {
+        fprintf(stderr, "panda_rehost: Couldn't connect to master server\n");
+        return -1;
+    }
+
+    uint32_t id_nl = htonl(session_id);
+
+    send(master_sockfd, &id_nl, 4, 0);
+
+    recv_symtab();
+    recv_mem_accesses();
+
+    return 0;
 }
 
 bool init_plugin(void *self)
 {
     panda_cb cb;
     panda_arg_list *args;
-    const char *sym_file;
+    uint32_t session_id;
+    const char *server;
 
     // May not be necessary but to afraid that not having this will silently break stuff
     panda_disable_tb_chaining();
@@ -241,8 +349,9 @@ bool init_plugin(void *self)
 
     args = panda_get_args("rehost");
     
-    sym_file = panda_parse_string_req(args, "sym_file", "File path of kallsyms dump");
-    parse_sym_file(sym_file);
+    session_id = panda_parse_uint32_req(args, "id", "The session ID of this QEMU runner");
+    server = panda_parse_string_req(args, "server", "host port of the server that we should communicate information back to");
+    connect_master(server, session_id);
 
     panda_free_args(args);
 
