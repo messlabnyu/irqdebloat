@@ -44,38 +44,38 @@ int recv_pkt(PacketType type, std::string &pkt)
     char *c_pkt = 0;
 
     if (read(master_sockfd, &recvd_type, sizeof(recvd_type)) != sizeof(recvd_type)) {
-        DEBUG("Error reading packet type");
+        ERROR("Error reading packet type");
         return -1;
     }
 
     recvd_type = ntohl(recvd_type);
 
     if (recvd_type != type) {
-        DEBUG("Received unexpected type. Expected %d got %d", type, recvd_type);
+        ERROR("Received unexpected type. Expected %d got %d", type, recvd_type);
         return -2;
     }
 
     if (read(master_sockfd, &pkt_len, sizeof(pkt_len)) != sizeof(pkt_len)) {
-        DEBUG("Error reading packet length");
+        ERROR("Error reading packet length");
         return -1;
     }
 
     pkt_len = ntohl(pkt_len);
-    if (pkt_len <= 0) {
-        DEBUG("Bad packet length recieved %d", pkt_len);
+    if (pkt_len == 0) {
+        ERROR("Bad packet length recieved %d", pkt_len);
         return -1;
     }
 
     c_pkt = (char*)malloc(pkt_len);
     if (!c_pkt) {
-        DEBUG("Can't allocate memory for packet data");
+        ERROR("Can't allocate memory for packet data");
         return -1;
     }
 
     while (read_len < pkt_len) {
         size_t read_this_round = 0;
         if (!(read_this_round = read(master_sockfd, c_pkt+read_len, pkt_len-read_len))) {
-            DEBUG("Error reading packet. Read %d bytes, expected %d bytes", read_len, pkt_len);
+            ERROR("Error reading packet. Read %d bytes, expected %d bytes", read_len, pkt_len);
             free(c_pkt);
             return -3;
         }
@@ -92,20 +92,20 @@ int send_pkt(PacketType type, const std::string &pkt)
     uint32_t pkt_type = htonl(type);
 
     if (send(master_sockfd, &pkt_type, sizeof(pkt_type), 0) != sizeof(pkt_type)) {
-        DEBUG("Error sending packet type");
+        ERROR("Error sending packet type");
         return -1;
     }
 
     uint32_t pkt_len = htonl(pkt.length());
     if (send(master_sockfd, &pkt_len, sizeof(pkt_len), 0) != sizeof(pkt_len)) {
-        DEBUG("Error sending packet length");
+        ERROR("Error sending packet length");
         return -1;
     }
 
     const char *raw_pkt = pkt.c_str();
 
     if (send(master_sockfd, raw_pkt, pkt.length(), 0) != pkt.length()) {
-        DEBUG("Error sending packet");
+        ERROR("Error sending packet");
         return -1;
     }
 
@@ -144,7 +144,8 @@ bool print_hook(CPUState *cpu, TranslationBlock *tb)
 
 bool poweroff_hook(CPUState *cpu, TranslationBlock *tb)
 {
-    DEBUG("Machine should restart or shutdown now.");
+    INFO("Guest called poweroff");
+    // TODO: Force QEMU shutdown
     
     return 0;
 }
@@ -267,20 +268,21 @@ int check_unassigned_mem_r(CPUState *cpu, target_ulong pc, target_ulong addr,
         known_mem_accesses[addr].pop_front();
         
         if (old_access.type() != MemoryAccess::READ) {
-            DEBUG("Desync! Memory read at " TARGET_FMT_lx " but next expected access is write", addr);
+            WARN("Desync! Memory read at " TARGET_FMT_lx " but next expected access is write", addr);
             return 0;
         }
 
         uint64_t old_size = old_access.value().length();
         if (old_size != size) {
-            DEBUG("Desync! Memory read at " TARGET_FMT_lx " was size %lu before, now is " TARGET_FMT_lx, addr, old_size, size);
+            WARN("Desync! Memory read at " TARGET_FMT_lx " was size %lu before, now is " TARGET_FMT_lx, addr, old_size, size);
             return 0;
         }
 
         memcpy(buf, old_access.value().c_str(), size);
 
     } else {
-        DEBUG("New unassigned read at 0x" TARGET_FMT_lx, addr);
+        // TODO: Spin detection
+        INFO("New unassigned read at 0x" TARGET_FMT_lx, addr);
         DEBUG("Current last device: %u set at time %lu", last_device, last_device_time);
 
         for (unsigned i = 0; i < size; i++) {
@@ -299,7 +301,7 @@ int check_unassigned_mem_r(CPUState *cpu, target_ulong pc, target_ulong addr,
         new_access.SerializeToString(&pkt);
         
         if (send_pkt(PacketType::NEW_MEMORY_ACCESS, pkt)) {
-            DEBUG("Failed to send memory access notification");
+            ERROR("Failed to send memory access notification");
         }
         
         last_device = MemoryAccess::UNKNOWN;
@@ -324,21 +326,22 @@ int check_unassigned_mem_w(CPUState *cpu, target_ulong pc, target_ulong addr,
         known_mem_accesses[addr].pop_front();
         
         if (old_access.type() != MemoryAccess::WRITE) {
-            DEBUG("Desync! Memory write at " TARGET_FMT_lx " but next expected access is read", addr);
+            WARN("Desync! Memory write at " TARGET_FMT_lx " but next expected access is read", addr);
             return 0;
         }
 
         uint64_t old_size = old_access.value().length();
         if (old_size != size) {
-            DEBUG("Desync! Memory write at " TARGET_FMT_lx " was size %lu before, now is " TARGET_FMT_lx, addr, old_size, size);
+            WARN("Desync! Memory write at " TARGET_FMT_lx " was size %lu before, now is " TARGET_FMT_lx, addr, old_size, size);
             return 0;
         }
 
         if (memcmp(buf, old_access.value().c_str(), size)) {
-            DEBUG("Warning: Memory write at " TARGET_FMT_lx " has a different value now", addr);
+            WARN("Memory write at " TARGET_FMT_lx " has a different value now", addr);
         }
     } else {
-        DEBUG("New unassigned write at 0x" TARGET_FMT_lx, addr);
+        // TODO: Spin detection
+        INFO("New unassigned write at 0x" TARGET_FMT_lx, addr);
         DEBUG("Current last device: %u set at time %lu", last_device, last_device_time);
 
         MemoryAccess new_access;
@@ -353,7 +356,7 @@ int check_unassigned_mem_w(CPUState *cpu, target_ulong pc, target_ulong addr,
         new_access.SerializeToString(&pkt);
         
         if (send_pkt(PacketType::NEW_MEMORY_ACCESS, pkt)) {
-            DEBUG("Failed to send memory access notification");
+            ERROR("Failed to send memory access notification");
         }
         
         last_device = MemoryAccess::UNKNOWN;
@@ -372,14 +375,14 @@ int recv_symtab()
     std::string pkt;
 
     if (recv_pkt(PacketType::SYMBOLS, pkt)) {
-        DEBUG("Error receiving SYMBOLS packet");
+        ERROR("Error receiving SYMBOLS packet");
         return -1;
     }
 
     SymbolTable parsed_symtab;
 
     if (!parsed_symtab.ParseFromString(pkt)) {
-        DEBUG("Error parsing SYMBOLS packet");
+        ERROR("Error parsing SYMBOLS packet");
         return -1;
     }
 
@@ -388,7 +391,7 @@ int recv_symtab()
         kernel_functions.insert(sym.address());
     }
 
-    DEBUG("Received %zu symbols", kallsyms.size());
+    INFO("Received %zu symbols", kallsyms.size());
     
     return 0;
 }
@@ -398,14 +401,14 @@ int recv_mem_accesses()
     std::string pkt;
 
     if (recv_pkt(PacketType::OLD_MEMORY_ACCESSES, pkt)) {
-        DEBUG("Error receiving OLD_MEMORY_ACCESSES packet");
+        ERROR("Error receiving OLD_MEMORY_ACCESSES packet");
         return -1;
     }
 
     OldMemoryAccesses parsed_accesses;
 
     if (!parsed_accesses.ParseFromString(pkt)) {
-        DEBUG("Error parsing OLD_MEMORY_ACCESSES packet");
+        ERROR("Error parsing OLD_MEMORY_ACCESSES packet");
         return -1;
     }
 
@@ -422,7 +425,7 @@ int connect_master(const char *server_string, uint32_t session_id)
     master_sockfd = socket(AF_INET, SOCK_STREAM, 0);
 
     if (master_sockfd < 0) {
-        fprintf(stderr, "panda_rehost: Couldn't create socket\n");
+        ERROR("Couldn't create socket");
         return -1;
     }
     
@@ -431,7 +434,7 @@ int connect_master(const char *server_string, uint32_t session_id)
     uint16_t port;
     
     if (sscanf(server_string, "%s %hu", ip, &port) != 2) {
-        fprintf(stderr, "panda_rehost: Error parsing master server string\n");
+        ERROR("Error parsing master server string");
         return -1;
     }
     
@@ -440,7 +443,7 @@ int connect_master(const char *server_string, uint32_t session_id)
     server.sin_port = htons(port);
 
     if (connect(master_sockfd, (sockaddr*)&server, sizeof(server)) < 0) {
-        fprintf(stderr, "panda_rehost: Couldn't connect to master server\n");
+        ERROR("Couldn't connect to master server");
         return -1;
     }
 
@@ -490,5 +493,6 @@ bool init_plugin(void *self)
 
 void uninit_plugin(void *self)
 {
-    // TODO: Dump new things to master
+    INFO("Unloading plugin");
+    // TODO: Dump call trace to master
 }
