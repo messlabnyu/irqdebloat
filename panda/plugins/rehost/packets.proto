@@ -1,5 +1,4 @@
 syntax = "proto2";
-package autoemu;
 
 enum PacketType {
     SYMBOLS = 0;                // master->runner; map of symbol name to addr for breakpoints built into plugin
@@ -27,7 +26,17 @@ message MemoryAccess {
     }
     required AccessType type = 2;
 
-    optional uint64 value = 3;
+    enum DeviceType {
+        UNKNOWN = 0;
+        UART = 1;
+        TIMER = 2;
+        INTERRUPT_CONTROLLER_DIST = 3;
+        INTERRUPT_CONTROLLER_CPU = 4;
+        NAND_CONTROLLER = 5;
+    }
+    optional DeviceType device = 3;
+
+    optional bytes value = 4;  // Stored as a string (bytes) so we can handle arbitrary length R/Ws
 }
 
 message OldMemoryAccesses {
@@ -35,7 +44,7 @@ message OldMemoryAccesses {
 }
 
 // Recursive definition for a call tree
-message SubCalls {
+message CallTree {
     required uint64 address = 1;
-    repeated SubCalls called = 2;
+    repeated CallTree called = 2;
 }

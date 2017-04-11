@@ -15,7 +15,8 @@ PANDAENDCOMMENT */
 #include <unordered_map>
 #include <map>
 #include <vector>
-#include <algorithm>
+#include <deque>
+#include <unordered_set>
 #include <time.h>
 #include <fstream>
 #include <sstream>
@@ -34,9 +35,85 @@ void uninit_plugin(void *);
 // Connection stuff
 int master_sockfd;
 
+int recv_pkt(PacketType type, std::string &pkt)
+{
+    uint32_t recvd_type, pkt_len, read_len;
+    recvd_type = 0xffffffff;
+    pkt_len = 0;
+    read_len = 0;
+    char *c_pkt = 0;
+
+    if (read(master_sockfd, &recvd_type, sizeof(recvd_type)) != sizeof(recvd_type)) {
+        DEBUG("Error reading packet type");
+        return -1;
+    }
+
+    recvd_type = ntohl(recvd_type);
+
+    if (recvd_type != type) {
+        DEBUG("Received unexpected type. Expected %d got %d", type, recvd_type);
+        return -2;
+    }
+
+    if (read(master_sockfd, &pkt_len, sizeof(pkt_len)) != sizeof(pkt_len)) {
+        DEBUG("Error reading packet length");
+        return -1;
+    }
+
+    pkt_len = ntohl(pkt_len);
+    if (pkt_len <= 0) {
+        DEBUG("Bad packet length recieved %d", pkt_len);
+        return -1;
+    }
+
+    c_pkt = (char*)malloc(pkt_len);
+    if (!c_pkt) {
+        DEBUG("Can't allocate memory for packet data");
+        return -1;
+    }
+
+    while (read_len < pkt_len) {
+        size_t read_this_round = 0;
+        if (!(read_this_round = read(master_sockfd, c_pkt+read_len, pkt_len-read_len))) {
+            DEBUG("Error reading packet. Read %d bytes, expected %d bytes", read_len, pkt_len);
+            free(c_pkt);
+            return -3;
+        }
+        read_len += read_this_round;
+    }
+
+    pkt = std::string(c_pkt, pkt_len);
+
+    return 0;
+}
+
+int send_pkt(PacketType type, const std::string &pkt)
+{
+    uint32_t pkt_type = htonl(type);
+
+    if (send(master_sockfd, &pkt_type, sizeof(pkt_type), 0) != sizeof(pkt_type)) {
+        DEBUG("Error sending packet type");
+        return -1;
+    }
+
+    uint32_t pkt_len = htonl(pkt.length());
+    if (send(master_sockfd, &pkt_len, sizeof(pkt_len), 0) != sizeof(pkt_len)) {
+        DEBUG("Error sending packet length");
+        return -1;
+    }
+
+    const char *raw_pkt = pkt.c_str();
+
+    if (send(master_sockfd, raw_pkt, pkt.length(), 0) != pkt.length()) {
+        DEBUG("Error sending packet");
+        return -1;
+    }
+
+    return 0;
+}
 
 // State tracking
-device_t last_device = UNKNOWN_DEVICE;
+MemoryAccess::DeviceType last_device = MemoryAccess::UNKNOWN;
 clock_t last_device_time = 0;
 
 
@@ -44,7 +121,7 @@ clock_t last_device_time = 0;
  * Guest function hooks
  */
 
-bool set_last_device(device_t type)
+bool set_last_device(MemoryAccess::DeviceType type)
 {
     last_device = type;
     last_device_time = clock();
@@ -79,7 +156,7 @@ bool poweroff_hook(CPUState *cpu, TranslationBlock *tb)
  * We only care about things in kernel-land right now so there's no chance we'll have a
  *  virtual address overlap issue.
  */
-std::vector<target_ulong> patched_funcs;
+std::unordered_set<target_ulong> patched_funcs;
 
 // mov r0, #0; bx lr
 // TODO: architecture-independent
@@ -89,13 +166,13 @@ bool skip_func(CPUState *cpu, TranslationBlock *tb)
 {
     target_ulong addr = tb->pc;
 
-    if (std::find(patched_funcs.begin(), patched_funcs.end(), addr) == patched_funcs.end()) {
+    if (patched_funcs.find(tb->pc) == patched_funcs.end()) {
         DEBUG("Patching function at 0x" TARGET_FMT_lx, addr);
         panda_virtual_memory_write(cpu, addr, patch_asm, sizeof(patch_asm));
-        patched_funcs.push_back(addr);
-        return 1;
+        patched_funcs.insert(addr);
+        return true; // Signal that we need to invalidate the TB
     } else {
-        return 0;
+        return false; // TB already modified on a prior run so no need to invalidate
     }
 }
 
@@ -104,29 +181,46 @@ bool skip_func(CPUState *cpu, TranslationBlock *tb)
  * Plugin-wide maps
  */
 
+// addr->function: hook function to run when addr is executed
 std::unordered_map<target_ulong, std::vector<hook_func_t>> hooks;
+
+// func_name->addr: function name to address lookup so we can have
+// position-independent constant hooks in `readable_hooks`
 std::map<std::string, target_ulong> kallsyms;
+
+// addr: set of all kernel function addresses for call trace generation
+std::unordered_set<target_ulong> kernel_functions;
+
+// func_name->function: hook function to run when the kernel function
+// func_name is called
 std::map<std::string, hook_func_t> readable_hooks = {
     {"printk", print_hook},
     {"printascii", print_hook},
     {"init_IRQ", [](CPUState *cpu, TranslationBlock *tb)
         {
-            return set_last_device(INTERRUPT_CONTROLLER_DIST);
+            return set_last_device(MemoryAccess::INTERRUPT_CONTROLLER_DIST);
         }
     },
     {"gic_cpu_init", [](CPUState *cpu, TranslationBlock *tb)
         {
-            return set_last_device(INTERRUPT_CONTROLLER_CPU);
+            return set_last_device(MemoryAccess::INTERRUPT_CONTROLLER_CPU);
         }
     },
     {"uart_register_driver", [](CPUState *cpu, TranslationBlock *tb)
         {
-            return set_last_device(UART_DEVICE);
+            return set_last_device(MemoryAccess::UART);
         }
     },
     {"die", poweroff_hook},
     {"machine_restart", poweroff_hook},
 };
+
+// addr->queue: ordered list of all previously encountered memory accesses
+// so we know how to respond and/or if we've diverged
+std::unordered_map<target_ulong, std::deque<MemoryAccess>> known_mem_accesses;
+
+// TODO: Call tree
+// TODO: Hook function returns to know when to step up the tree
 
 
 /*
@@ -135,7 +229,7 @@ std::map<std::string, hook_func_t> readable_hooks = {
 
 bool before_block_exec_invalidate_opt(CPUState *cpu, TranslationBlock *tb)
 {
-    int ret = 0;
+    bool ret = false;
 
     auto func_hooks = hooks.find(tb->pc);
     if (func_hooks != hooks.end()) {
@@ -144,13 +238,17 @@ bool before_block_exec_invalidate_opt(CPUState *cpu, TranslationBlock *tb)
         }
     }
 
-    if (ret)
+    // TODO: Add to call trace
+
+    if (ret) {
         DEBUG("Invalidating the translation block at 0x" TARGET_FMT_lx, tb->pc);
+    }
 
     return ret;
 }
 
-int check_unassigned_mem_r(CPUState *cpu, target_ulong pc, target_ulong addr, target_ulong size)
+int check_unassigned_mem_r(CPUState *cpu, target_ulong pc, target_ulong addr,
+                           target_ulong size, void *buf)
 {
     MemoryRegion *subregion;
     
@@ -161,10 +259,51 @@ int check_unassigned_mem_r(CPUState *cpu, target_ulong pc, target_ulong addr, ta
         }
     }
 
-    // This memory read is not in any existing MemoryRegion, so report it to the master
+    // This memory read is not in any existing MemoryRegion, so try to respond from
+    // what the master sent us at startup
 
-    DEBUG("Unassigned read at 0x" TARGET_FMT_lx, addr);
-    DEBUG("Current last device: %u set at time %lu", last_device, last_device_time);
+    if (!known_mem_accesses[addr].empty()) {
+        MemoryAccess old_access = known_mem_accesses[addr].front();
+        known_mem_accesses[addr].pop_front();
+        
+        if (old_access.type() != MemoryAccess::READ) {
+            DEBUG("Desync! Memory read at " TARGET_FMT_lx " but next expected access is write", addr);
+            return 0;
+        }
+
+        uint64_t old_size = old_access.value().length();
+        if (old_size != size) {
+            DEBUG("Desync! Memory read at " TARGET_FMT_lx " was size %lu before, now is " TARGET_FMT_lx, addr, old_size, size);
+            return 0;
+        }
+
+        memcpy(buf, old_access.value().c_str(), size);
+
+    } else {
+        DEBUG("New unassigned read at 0x" TARGET_FMT_lx, addr);
+        DEBUG("Current last device: %u set at time %lu", last_device, last_device_time);
+
+        for (unsigned i = 0; i < size; i++) {
+            *(uint8_t *)(buf+i) = rand() % 256;
+        }
+
+        MemoryAccess new_access;
+        new_access.set_address(addr);
+        new_access.set_type(MemoryAccess::READ);
+        new_access.set_device(last_device);
+        
+        std::string response((char*)buf, size);
+        new_access.set_value(response);
+
+        std::string pkt;
+        new_access.SerializeToString(&pkt);
+        
+        if (send_pkt(PacketType::NEW_MEMORY_ACCESS, pkt)) {
+            DEBUG("Failed to send memory access notification");
+        }
+        
+        last_device = MemoryAccess::UNKNOWN;
+    }
     
     return 0;
 }
@@ -180,10 +319,45 @@ int check_unassigned_mem_w(CPUState *cpu, target_ulong pc, target_ulong addr,
         }
     }
 
-    DEBUG("Unassigned write at 0x" TARGET_FMT_lx, addr);
-    DEBUG("Current last device: %u set at time %lu", last_device, last_device_time);
+    if (!known_mem_accesses[addr].empty()) {
+        MemoryAccess old_access = known_mem_accesses[addr].front();
+        known_mem_accesses[addr].pop_front();
+        
+        if (old_access.type() != MemoryAccess::WRITE) {
+            DEBUG("Desync! Memory write at " TARGET_FMT_lx " but next expected access is read", addr);
+            return 0;
+        }
 
-    last_device = UNKNOWN_DEVICE;
+        uint64_t old_size = old_access.value().length();
+        if (old_size != size) {
+            DEBUG("Desync! Memory write at " TARGET_FMT_lx " was size %lu before, now is " TARGET_FMT_lx, addr, old_size, size);
+            return 0;
+        }
+
+        if (memcmp(buf, old_access.value().c_str(), size)) {
+            DEBUG("Warning: Memory write at " TARGET_FMT_lx " has a different value now", addr);
+        }
+    } else {
+        DEBUG("New unassigned write at 0x" TARGET_FMT_lx, addr);
+        DEBUG("Current last device: %u set at time %lu", last_device, last_device_time);
+
+        MemoryAccess new_access;
+        new_access.set_address(addr);
+        new_access.set_type(MemoryAccess::WRITE);
+        new_access.set_device(last_device);
+        
+        std::string val((char*)buf, size);
+        new_access.set_value(val);
+
+        std::string pkt;
+        new_access.SerializeToString(&pkt);
+        
+        if (send_pkt(PacketType::NEW_MEMORY_ACCESS, pkt)) {
+            DEBUG("Failed to send memory access notification");
+        }
+        
+        last_device = MemoryAccess::UNKNOWN;
+    }
     
     return 0;
 }
@@ -193,76 +367,25 @@ int check_unassigned_mem_w(CPUState *cpu, target_ulong pc, target_ulong addr,
  * Plugin initialization
  */
 
-int recv_pkt(autoemu::PacketType type, std::string &pkt)
-{
-    uint32_t recvd_type, pkt_len, read_len;
-    recvd_type = 0xffffffff;
-    pkt_len = 0;
-    read_len = 0;
-    char *c_pkt = 0;
-
-    if (read(master_sockfd, &recvd_type, 4) != 4) {
-        DEBUG("Error reading packet type");
-        return -1;
-    }
-
-    recvd_type = ntohl(recvd_type);
-
-    if (recvd_type != type) {
-        DEBUG("Received unexpected type. Expected %d got %d", type, recvd_type);
-        return -2;
-    }
-
-    if (read(master_sockfd, &pkt_len, 4) != 4) {
-        DEBUG("Error reading packet length");
-        return -1;
-    }
-
-    pkt_len = ntohl(pkt_len);
-    if (pkt_len <= 0) {
-        DEBUG("Bad packet length recieved %d", pkt_len);
-        return -1;
-    }
-
-    c_pkt = (char*)malloc(pkt_len);
-    if (!c_pkt) {
-        DEBUG("Can't allocate memory for packet data");
-        return -1;
-    }
-
-    while (read_len < pkt_len) {
-        size_t read_this_round = 0;
-        if (!(read_this_round = read(master_sockfd, c_pkt+read_len, pkt_len-read_len))) {
-            DEBUG("Error reading packet. Read %d bytes, expected %d bytes", read_len, pkt_len);
-            free(c_pkt);
-            return -3;
-        }
-        read_len += read_this_round;
-    }
-
-    pkt = std::string(c_pkt, pkt_len);
-
-    return 0;
-}
-
 int recv_symtab()
 {
     std::string pkt;
 
-    if (recv_pkt(autoemu::PacketType::SYMBOLS, pkt)) {
+    if (recv_pkt(PacketType::SYMBOLS, pkt)) {
         DEBUG("Error receiving SYMBOLS packet");
         return -1;
     }
 
-    autoemu::SymbolTable parsed_symtab;
+    SymbolTable parsed_symtab;
 
     if (!parsed_symtab.ParseFromString(pkt)) {
         DEBUG("Error parsing SYMBOLS packet");
         return -1;
     }
 
-    for (autoemu::SymbolTable::Symbol sym : parsed_symtab.symbols()) {
+    for (SymbolTable::Symbol sym : parsed_symtab.symbols()) {
         kallsyms[sym.name()] = sym.address();
+        kernel_functions.insert(sym.address());
     }
 
     DEBUG("Received %zu symbols", kallsyms.size());
@@ -274,19 +397,21 @@ int recv_mem_accesses()
 {
     std::string pkt;
 
-    if (recv_pkt(autoemu::PacketType::OLD_MEMORY_ACCESSES, pkt)) {
+    if (recv_pkt(PacketType::OLD_MEMORY_ACCESSES, pkt)) {
         DEBUG("Error receiving OLD_MEMORY_ACCESSES packet");
         return -1;
     }
 
-    autoemu::OldMemoryAccesses parsed_accesses;
+    OldMemoryAccesses parsed_accesses;
 
     if (!parsed_accesses.ParseFromString(pkt)) {
         DEBUG("Error parsing OLD_MEMORY_ACCESSES packet");
         return -1;
     }
 
-    // TODO: Save parsed_accesses
+    for (MemoryAccess access : parsed_accesses.accesses()) {
+        known_mem_accesses[access.address()].push_back(access);
+    }
 
     return 0;
 }
@@ -321,7 +446,7 @@ int connect_master(const char *server_string, uint32_t session_id)
 
     uint32_t id_nl = htonl(session_id);
 
-    send(master_sockfd, &id_nl, 4, 0);
+    send(master_sockfd, &id_nl, sizeof(id_nl), 0);
 
     recv_symtab();
     recv_mem_accesses();
@@ -342,14 +467,19 @@ bool init_plugin(void *self)
     panda_register_callback(self, PANDA_CB_BEFORE_BLOCK_EXEC_INVALIDATE_OPT, cb);
    
     panda_enable_memcb();
-    cb.virt_mem_before_read = check_unassigned_mem_r;
-    panda_register_callback(self, PANDA_CB_PHYS_MEM_BEFORE_READ, cb);
-    cb.virt_mem_before_write = check_unassigned_mem_w;
-    panda_register_callback(self, PANDA_CB_PHYS_MEM_BEFORE_WRITE, cb);
+    cb.phys_mem_after_read = check_unassigned_mem_r;
+    panda_register_callback(self, PANDA_CB_PHYS_MEM_AFTER_READ, cb);
+    cb.phys_mem_after_write = check_unassigned_mem_w;
+    panda_register_callback(self, PANDA_CB_PHYS_MEM_AFTER_WRITE, cb);
 
     args = panda_get_args("rehost");
     
     session_id = panda_parse_uint32_req(args, "id", "The session ID of this QEMU runner");
+    
+    // Seed random for memory READ responses so that it will differ between runs but
+    // is still easily replicable for testing/debugging.
+    srand(session_id);
+
     server = panda_parse_string_req(args, "server", "host port of the server that we should communicate information back to");
     connect_master(server, session_id);
 
