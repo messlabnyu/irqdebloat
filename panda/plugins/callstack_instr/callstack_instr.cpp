@@ -168,7 +168,10 @@ static stackid get_stackid(CPUArchState* env) {
         }
     }
 #else
-    return panda_current_asid(ENV_GET_CPU(env));
+    if (in_kernelspace(env))
+        return 0;
+    else
+        return panda_current_asid(ENV_GET_CPU(env));
 #endif
 }
 
@@ -275,8 +278,8 @@ int before_block_exec(CPUState *cpu, TranslationBlock *tb) {
     std::vector<target_ulong> &w = function_stacks[get_stackid(env)];
     if (v.empty()) return 1;
 
-    // Search up to 10 down
-    for (int i = v.size()-1; i > ((int)(v.size()-10)) && i >= 0; i--) {
+    // Search up to 50 down
+    for (int i = v.size()-1; i >= 0; i--) {
         if (tb->pc == v[i].pc) {
             //printf("Matched at depth %d\n", v.size()-i);
             //v.erase(v.begin()+i, v.end());
