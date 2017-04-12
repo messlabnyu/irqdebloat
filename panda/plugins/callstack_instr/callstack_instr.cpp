@@ -225,8 +225,6 @@ instr_type disas_block(CPUArchState* env, target_ulong pc, int size) {
     csh handle = cs_handle_32;
 #endif
 
-    cs_option(handle, CS_OPT_DETAIL, CS_OPT_ON);
-
     cs_insn *insn;
     cs_insn *end;
     size_t count = cs_disasm(handle, buf, size, pc, 0, &insn);

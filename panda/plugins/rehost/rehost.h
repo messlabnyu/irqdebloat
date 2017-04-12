@@ -12,6 +12,13 @@ class CallTree {
         std::vector<CallTree*> subcalls;
 };
 
+/* Modified from `callstack_instr` */
+enum instr_type {
+  INSTR_UNKNOWN = 0,
+  INSTR_CALL,
+  INSTR_RET,
+};
+
 // Logging macros
 
 #define DEBUG_REHOST_PLUGIN // Enable debug

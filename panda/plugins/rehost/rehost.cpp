@@ -21,11 +21,17 @@ PANDAENDCOMMENT */
 #include <fstream>
 #include <sstream>
 
+#include <capstone/capstone.h>
+#if defined(TARGET_I386)
+#include <capstone/x86.h>
+#elif defined(TARGET_ARM)
+#include <capstone/arm.h>
+#elif defined(TARGET_PPC)
+#include <capstone/ppc.h>
+#endif
+
 #include "rehost.h"
 #include "packets.pb.h"
-
-#include "callstack_instr/callstack_instr.h"
-#include "callstack_instr/callstack_instr_ext.h"
 
 extern "C" {
 
@@ -224,43 +230,126 @@ std::map<std::string, hook_func_t> readable_hooks = {
 std::unordered_map<target_ulong, std::deque<packets::MemoryAccess>> known_mem_accesses;
 
 // addr->vector<Tree>
-// TODO: Hook function returns to know when to step up the tree
 CallTree call_tree;
 CallTree *current_branch = &call_tree;
 size_t depth;
+
+csh cs_handle_32;
+csh cs_handle_64;
+std::unordered_map<target_ulong, instr_type> call_cache;
+std::vector<target_ulong> expected_rets;
+
+
+/*
+ * Call tree helpers
+ */
+
+bool is_arm_call(csh handle, cs_insn *insn, target_ulong pc, int size) {
+    // Call must be a branch with link *...
+    if (insn->id != ARM_INS_BL && insn->id != ARM_INS_BLX) {
+        return false;
+    }
+
+    // and point to something outside this TB
+    cs_arm details = insn->detail->arm;
+
+    if (details.operands[0].type == ARM_OP_IMM &&
+            details.operands[0].imm >= pc &&
+            details.operands[0].imm < pc + size) {
+        return false;
+    }
+
+    return true;
+}
+
+bool is_arm_ret(csh handle, cs_insn *insn, target_long pc, int size) {
+    // TODO: AArch64 (incl. the "RET" instruction)
+    // Ret must be a jump (could be B, BX, etc.)...
+    if (!cs_insn_group(handle, insn, CS_GRP_JUMP)) {
+        return false;
+    }
+
+    // ... whose first operand is the link register
+    cs_arm details = insn->detail->arm;
+
+    if (details.operands[0].type != ARM_OP_REG ||
+        details.operands[0].reg != ARM_REG_LR) {
+        return false;
+    }
+
+    return true;
+
+}
+
+/*
+ * Taken from `callstack_instr` and added some ARM patches.
+ * Unfortunately it doesn't seem that we can directly use that plugin
+ * as we have knowledge we need to integrate into what constitutes a
+ * call/ret. That is, we know where all exported kernel functions
+ * (a vast majoity of all kernel functions) live in memory, and we can
+ * use that to create what should be a completely accurate call tree.
+ */
+instr_type disas_block(CPUArchState* env, target_ulong pc, int size) {
+    unsigned char *buf = (unsigned char *) malloc(size);
+    int err = panda_virtual_memory_read(ENV_GET_CPU(env), pc, buf, size);
+    if (err == -1) printf("Couldn't read TB memory!\n");
+    instr_type res = INSTR_UNKNOWN;
+
+#if defined(TARGET_I386)
+    csh handle = (env->hflags & HF_LMA_MASK) ? cs_handle_64 : cs_handle_32;
+#elif defined(TARGET_ARM) || defined(TARGET_PPC)
+    csh handle = cs_handle_32;
+#endif
+
+    cs_option(handle, CS_OPT_DETAIL, CS_OPT_ON);
+
+    cs_insn *insn;
+    cs_insn *end;
+    size_t count = cs_disasm(handle, buf, size, pc, 0, &insn);
+    if (count <= 0) goto done2;
+
+    for (end = insn + count - 1; end >= insn; end--) {
+        if (!cs_insn_group(handle, end, CS_GRP_INVALID)) {
+            break;
+        }
+    }
+    if (end < insn) goto done;
+
+#if defined(TARGET_I386)
+    if (cs_insn_group(handle, end, CS_GRP_CALL)) {
+        res = INSTR_CALL;
+    } else if (cs_insn_group(handle, end, CS_GRP_RET)) {
+        res = INSTR_RET;
+    } else {
+        res = INSTR_UNKNOWN;
+    }
+#elif defined(TARGET_ARM)
+    if (is_arm_call(handle, end, pc, size)) {
+        res = INSTR_CALL;
+    } else if (is_arm_ret(handle, end, pc, size)) {
+        res = INSTR_RET;
+    } else {
+        res = INSTR_UNKNOWN;
+    }
+#endif
+
+done:
+    cs_free(insn, count);
+done2:
+    free(buf);
+    return res;
+}
 
 /*
  * PANDA callback functions
  */
 
-void add_call(CPUState *env, target_ulong func)
-{
-    CallTree *new_branch = new CallTree();
-    new_branch->address = func;
-    new_branch->parent = current_branch;
-    current_branch->subcalls.push_back(new_branch);
-    current_branch = new_branch;
-    depth++;
-    DEBUG("Call at " TARGET_FMT_lx ". Depth=%zu", func, depth);
-}
 
-void return_from_call(CPUState *env, target_ulong func)
-{
-    /*
-     * callstack_instr doesn't really look for RET instructions, but
-     * rather it looks to see if a BB is the expected return address
-     * of a given call. Because of this, we can skip multiple steps
-     * back up the call tree in one call to this callback
-     */
-    do {
-        current_branch = current_branch->parent;
-        depth--;
-        DEBUG("Ret at " TARGET_FMT_lx ". Depth=%zu", func, depth);
-    } while (current_branch->parent && current_branch->address != func);
-    
-    if (!current_branch->parent) {
-        WARN("Attempt to return from root function");
-    }
+int after_block_translate(CPUState *cpu, TranslationBlock *tb) {
+    CPUArchState* env = (CPUArchState*)cpu->env_ptr;
+    call_cache[tb->pc] = disas_block(env, tb->pc, tb->size);
+
+    return 1;
 }
 
 bool before_block_exec_invalidate_opt(CPUState *cpu, TranslationBlock *tb)
@@ -273,12 +362,58 @@ bool before_block_exec_invalidate_opt(CPUState *cpu, TranslationBlock *tb)
             ret |= (*hook)(cpu, tb);
         }
     }
+
+    // search to see if we RET'd up to 10 items back in the return addr stack
+    for (int i = expected_rets.size()-1; i > ((int)(expected_rets.size()-10)) && i >= 0; i--) {
+        if (tb->pc == expected_rets[i]) {
+            current_branch = current_branch->parent;
+            
+            depth -= expected_rets.size() - i;
+            DEBUG("Ret to " TARGET_FMT_lx, tb->pc);
+
+            expected_rets.erase(expected_rets.begin()+i, expected_rets.end());
+
+            break;
+        }
+    }
     
     if (ret) {
         DEBUG("Invalidating the translation block at 0x" TARGET_FMT_lx, tb->pc);
     }
 
     return ret;
+}
+
+int after_block_exec(CPUState* cpu, TranslationBlock *tb) {
+    CPUArchState* env = (CPUArchState*)cpu->env_ptr;
+    instr_type tb_type = call_cache[tb->pc];
+
+    if (tb_type == INSTR_CALL) {
+        target_ulong callee_pc, cs_base;
+        uint32_t flags;
+        // This retrieves the pc in an architecture-neutral way
+        cpu_get_tb_cpu_state(env, &callee_pc, &cs_base, &flags);
+
+        if (kernel_functions.find(callee_pc) != kernel_functions.end()) {
+            // Just about to call into a kernel function
+            CallTree *new_branch = new CallTree();
+            new_branch->address = callee_pc;
+            new_branch->parent = current_branch;
+            current_branch->subcalls.push_back(new_branch);
+            current_branch = new_branch;
+
+            expected_rets.push_back(tb->pc + tb->size);
+
+            depth++;
+            DEBUG("Call to " TARGET_FMT_lx, callee_pc);
+        }
+
+    }
+    else if (tb_type == INSTR_RET) {
+        // We leave return finding to BB matching in before block exec
+    }
+
+    return 1;
 }
 
 int check_unassigned_mem_r(CPUState *cpu, target_ulong pc, target_ulong addr,
@@ -501,24 +636,39 @@ bool init_plugin(void *self)
 
     // May not be necessary but to afraid that not having this will silently break stuff
     panda_disable_tb_chaining();
+    cb.after_block_translate = after_block_translate;
+    panda_register_callback(self, PANDA_CB_AFTER_BLOCK_TRANSLATE, cb);
     cb.before_block_exec_invalidate_opt = before_block_exec_invalidate_opt;
     panda_register_callback(self, PANDA_CB_BEFORE_BLOCK_EXEC_INVALIDATE_OPT, cb);
+    cb.after_block_exec = after_block_exec;
+    panda_register_callback(self, PANDA_CB_AFTER_BLOCK_EXEC, cb);
    
     panda_enable_memcb();
     cb.phys_mem_after_read = check_unassigned_mem_r;
     panda_register_callback(self, PANDA_CB_PHYS_MEM_AFTER_READ, cb);
     cb.phys_mem_after_write = check_unassigned_mem_w;
     panda_register_callback(self, PANDA_CB_PHYS_MEM_AFTER_WRITE, cb);
-    
-    panda_require("callstack_instr");
-    if (!init_callstack_instr_api()) {
-        ERROR("callstack_instr failed to initialize");
+
+    /* capstone setup */
+
+#if defined(TARGET_I386)
+    if (cs_open(CS_ARCH_X86, CS_MODE_32, &cs_handle_32) != CS_ERR_OK)
+#if defined(TARGET_X86_64)
+    if (cs_open(CS_ARCH_X86, CS_MODE_64, &cs_handle_64) != CS_ERR_OK)
+#endif
+#elif defined(TARGET_ARM)
+    if (cs_open(CS_ARCH_ARM, CS_MODE_ARM, &cs_handle_32) != CS_ERR_OK)
+#elif defined(TARGET_PPC)
+    if (cs_open(CS_ARCH_PPC, CS_MODE_32, &cs_handle_32) != CS_ERR_OK)
+#endif
         return false;
-    }
 
-    PPP_REG_CB("callstack_instr", on_call, add_call);
-    PPP_REG_CB("callstack_instr", on_ret, return_from_call);
-
+    // Need details in capstone to have instruction groupings
+    cs_option(cs_handle_32, CS_OPT_DETAIL, CS_OPT_ON);
+#if defined(TARGET_X86_64)
+    cs_option(cs_handle_64, CS_OPT_DETAIL, CS_OPT_ON);
+#endif
+    
     /* Arg parsing */
     args = panda_get_args("rehost");
     
