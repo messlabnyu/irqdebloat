@@ -227,6 +227,7 @@ std::unordered_map<target_ulong, std::deque<packets::MemoryAccess>> known_mem_ac
 // TODO: Hook function returns to know when to step up the tree
 CallTree call_tree;
 CallTree *current_branch = &call_tree;
+size_t depth;
 
 /*
  * PANDA callback functions
@@ -234,17 +235,32 @@ CallTree *current_branch = &call_tree;
 
 void add_call(CPUState *env, target_ulong func)
 {
-    DEBUG("Call to " TARGET_FMT_lx, func);
     CallTree *new_branch = new CallTree();
     new_branch->address = func;
     new_branch->parent = current_branch;
     current_branch->subcalls.push_back(new_branch);
     current_branch = new_branch;
+    depth++;
+    DEBUG("Call at " TARGET_FMT_lx ". Depth=%zu", func, depth);
 }
 
 void return_from_call(CPUState *env, target_ulong func)
 {
-    current_branch = current_branch->parent;
+    /*
+     * callstack_instr doesn't really look for RET instructions, but
+     * rather it looks to see if a BB is the expected return address
+     * of a given call. Because of this, we can skip multiple steps
+     * back up the call tree in one call to this callback
+     */
+    do {
+        current_branch = current_branch->parent;
+        depth--;
+        DEBUG("Ret at " TARGET_FMT_lx ". Depth=%zu", func, depth);
+    } while (current_branch->parent && current_branch->address != func);
+    
+    if (!current_branch->parent) {
+        WARN("Attempt to return from root function");
+    }
 }
 
 bool before_block_exec_invalidate_opt(CPUState *cpu, TranslationBlock *tb)
@@ -299,8 +315,8 @@ int check_unassigned_mem_r(CPUState *cpu, target_ulong pc, target_ulong addr,
 
     } else {
         // TODO: Spin detection
-        INFO("New unassigned read at 0x" TARGET_FMT_lx, addr);
-        DEBUG("Current last device: %u set at time %lu", last_device, last_device_time);
+        //INFO("New unassigned read at 0x" TARGET_FMT_lx, addr);
+        //DEBUG("Current last device: %u set at time %lu", last_device, last_device_time);
 
         for (unsigned i = 0; i < size; i++) {
             *(uint8_t *)(buf+i) = rand() % 256;
@@ -520,7 +536,6 @@ bool init_plugin(void *self)
     if (connect_master(server, session_id)) {
         return false;
     }
-
 
     return true;
 }

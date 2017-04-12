@@ -172,6 +172,47 @@ static stackid get_stackid(CPUArchState* env) {
 #endif
 }
 
+/*
+ * We need to special case ARM stuff because ARM is special.
+ * ngregory - 11 Apr 2017
+ */
+bool is_arm_call(csh handle, cs_insn *insn, target_ulong pc, int size) {
+    // Call must be a branch with link *...
+    if (insn->id != ARM_INS_BL && insn->id != ARM_INS_BLX) {
+        return false;
+    }
+
+    // and point to something outside this TB
+    cs_arm details = insn->detail->arm;
+
+    if (details.operands[0].type == ARM_OP_IMM &&
+            details.operands[0].imm >= pc &&
+            details.operands[0].imm < pc + size) {
+        return false;
+    }
+
+    return true;
+}
+
+bool is_arm_ret(csh handle, cs_insn *insn, target_long pc, int size) {
+    // TODO: AArch64 (incl. the "RET" instruction)
+    // Ret must be a jump (could be B, BX, etc.)...
+    if (!cs_insn_group(handle, insn, CS_GRP_JUMP)) {
+        return false;
+    }
+
+    // ... whose first operand is the link register
+    cs_arm details = insn->detail->arm;
+
+    if (details.operands[0].type != ARM_OP_REG ||
+        details.operands[0].reg != ARM_REG_LR) {
+        return false;
+    }
+
+    return true;
+
+}
+
 instr_type disas_block(CPUArchState* env, target_ulong pc, int size) {
     unsigned char *buf = (unsigned char *) malloc(size);
     int err = panda_virtual_memory_rw(ENV_GET_CPU(env), pc, buf, size, 0);
@@ -183,6 +224,8 @@ instr_type disas_block(CPUArchState* env, target_ulong pc, int size) {
 #elif defined(TARGET_ARM) || defined(TARGET_PPC)
     csh handle = cs_handle_32;
 #endif
+
+    cs_option(handle, CS_OPT_DETAIL, CS_OPT_ON);
 
     cs_insn *insn;
     cs_insn *end;
@@ -196,6 +239,7 @@ instr_type disas_block(CPUArchState* env, target_ulong pc, int size) {
     }
     if (end < insn) goto done;
 
+#if defined(TARGET_I386)
     if (cs_insn_group(handle, end, CS_GRP_CALL)) {
         res = INSTR_CALL;
     } else if (cs_insn_group(handle, end, CS_GRP_RET)) {
@@ -203,6 +247,15 @@ instr_type disas_block(CPUArchState* env, target_ulong pc, int size) {
     } else {
         res = INSTR_UNKNOWN;
     }
+#elif defined(TARGET_ARM)
+    if (is_arm_call(handle, end, pc, size)) {
+        res = INSTR_CALL;
+    } else if (is_arm_ret(handle, end, pc, size)) {
+        res = INSTR_RET;
+    } else {
+        res = INSTR_UNKNOWN;
+    }
+#endif
 
 done:
     cs_free(insn, count);
