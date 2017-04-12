@@ -5,7 +5,16 @@
 
 typedef bool (*hook_func_t)(CPUState *, TranslationBlock *);
 
-#define DEBUG_REHOST_PLUGIN
+class CallTree {
+    public:
+        target_ulong address = 0;
+        CallTree *parent = NULL;
+        std::vector<CallTree*> subcalls;
+};
+
+// Logging macros
+
+#define DEBUG_REHOST_PLUGIN // Enable debug
 
 #ifdef DEBUG_REHOST_PLUGIN
 #define DEBUG(fmt, ...) \

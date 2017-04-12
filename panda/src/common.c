@@ -32,7 +32,8 @@ static inline uint32_t regime_el(CPUARMState *env, ARMMMUIdx mmu_idx)
     case ARMMMUIdx_S1NSE1:
         return 1;
     default:
-        g_assert_not_reached();
+        return mmu_idx & 3;
+        //g_assert_not_reached();
     }
 }
 

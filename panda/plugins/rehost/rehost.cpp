@@ -24,6 +24,9 @@ PANDAENDCOMMENT */
 #include "rehost.h"
 #include "packets.pb.h"
 
+#include "callstack_instr/callstack_instr.h"
+#include "callstack_instr/callstack_instr_ext.h"
+
 extern "C" {
 
 bool init_plugin(void *);
@@ -35,7 +38,7 @@ void uninit_plugin(void *);
 // Connection stuff
 int master_sockfd;
 
-int recv_pkt(PacketType type, std::string &pkt)
+int recv_pkt(packets::PacketType type, std::string &pkt)
 {
     uint32_t recvd_type, pkt_len, read_len;
     recvd_type = 0xffffffff;
@@ -87,7 +90,7 @@ int recv_pkt(PacketType type, std::string &pkt)
     return 0;
 }
 
-int send_pkt(PacketType type, const std::string &pkt)
+int send_pkt(packets::PacketType type, const std::string &pkt)
 {
     uint32_t pkt_type = htonl(type);
 
@@ -113,7 +116,7 @@ int send_pkt(PacketType type, const std::string &pkt)
 }
 
 // State tracking
-MemoryAccess::DeviceType last_device = MemoryAccess::UNKNOWN;
+packets::MemoryAccess::DeviceType last_device = packets::MemoryAccess::UNKNOWN;
 clock_t last_device_time = 0;
 
 
@@ -121,7 +124,7 @@ clock_t last_device_time = 0;
  * Guest function hooks
  */
 
-bool set_last_device(MemoryAccess::DeviceType type)
+bool set_last_device(packets::MemoryAccess::DeviceType type)
 {
     last_device = type;
     last_device_time = clock();
@@ -199,17 +202,17 @@ std::map<std::string, hook_func_t> readable_hooks = {
     {"printascii", print_hook},
     {"init_IRQ", [](CPUState *cpu, TranslationBlock *tb)
         {
-            return set_last_device(MemoryAccess::INTERRUPT_CONTROLLER_DIST);
+            return set_last_device(packets::MemoryAccess::INTERRUPT_CONTROLLER_DIST);
         }
     },
     {"gic_cpu_init", [](CPUState *cpu, TranslationBlock *tb)
         {
-            return set_last_device(MemoryAccess::INTERRUPT_CONTROLLER_CPU);
+            return set_last_device(packets::MemoryAccess::INTERRUPT_CONTROLLER_CPU);
         }
     },
     {"uart_register_driver", [](CPUState *cpu, TranslationBlock *tb)
         {
-            return set_last_device(MemoryAccess::UART);
+            return set_last_device(packets::MemoryAccess::UART);
         }
     },
     {"die", poweroff_hook},
@@ -218,15 +221,31 @@ std::map<std::string, hook_func_t> readable_hooks = {
 
 // addr->queue: ordered list of all previously encountered memory accesses
 // so we know how to respond and/or if we've diverged
-std::unordered_map<target_ulong, std::deque<MemoryAccess>> known_mem_accesses;
+std::unordered_map<target_ulong, std::deque<packets::MemoryAccess>> known_mem_accesses;
 
-// TODO: Call tree
+// addr->vector<Tree>
 // TODO: Hook function returns to know when to step up the tree
-
+CallTree call_tree;
+CallTree *current_branch = &call_tree;
 
 /*
  * PANDA callback functions
  */
+
+void add_call(CPUState *env, target_ulong func)
+{
+    DEBUG("Call to " TARGET_FMT_lx, func);
+    CallTree *new_branch = new CallTree();
+    new_branch->address = func;
+    new_branch->parent = current_branch;
+    current_branch->subcalls.push_back(new_branch);
+    current_branch = new_branch;
+}
+
+void return_from_call(CPUState *env, target_ulong func)
+{
+    current_branch = current_branch->parent;
+}
 
 bool before_block_exec_invalidate_opt(CPUState *cpu, TranslationBlock *tb)
 {
@@ -238,9 +257,7 @@ bool before_block_exec_invalidate_opt(CPUState *cpu, TranslationBlock *tb)
             ret |= (*hook)(cpu, tb);
         }
     }
-
-    // TODO: Add to call trace
-
+    
     if (ret) {
         DEBUG("Invalidating the translation block at 0x" TARGET_FMT_lx, tb->pc);
     }
@@ -264,10 +281,10 @@ int check_unassigned_mem_r(CPUState *cpu, target_ulong pc, target_ulong addr,
     // what the master sent us at startup
 
     if (!known_mem_accesses[addr].empty()) {
-        MemoryAccess old_access = known_mem_accesses[addr].front();
+        packets::MemoryAccess old_access = known_mem_accesses[addr].front();
         known_mem_accesses[addr].pop_front();
         
-        if (old_access.type() != MemoryAccess::READ) {
+        if (old_access.type() != packets::MemoryAccess::READ) {
             WARN("Desync! Memory read at " TARGET_FMT_lx " but next expected access is write", addr);
             return 0;
         }
@@ -289,9 +306,9 @@ int check_unassigned_mem_r(CPUState *cpu, target_ulong pc, target_ulong addr,
             *(uint8_t *)(buf+i) = rand() % 256;
         }
 
-        MemoryAccess new_access;
+        packets::MemoryAccess new_access;
         new_access.set_address(addr);
-        new_access.set_type(MemoryAccess::READ);
+        new_access.set_type(packets::MemoryAccess::READ);
         new_access.set_device(last_device);
         
         std::string response((char*)buf, size);
@@ -300,11 +317,11 @@ int check_unassigned_mem_r(CPUState *cpu, target_ulong pc, target_ulong addr,
         std::string pkt;
         new_access.SerializeToString(&pkt);
         
-        if (send_pkt(PacketType::NEW_MEMORY_ACCESS, pkt)) {
+        if (send_pkt(packets::PacketType::NEW_MEMORY_ACCESS, pkt)) {
             ERROR("Failed to send memory access notification");
         }
         
-        last_device = MemoryAccess::UNKNOWN;
+        last_device = packets::MemoryAccess::UNKNOWN;
     }
     
     return 0;
@@ -322,10 +339,10 @@ int check_unassigned_mem_w(CPUState *cpu, target_ulong pc, target_ulong addr,
     }
 
     if (!known_mem_accesses[addr].empty()) {
-        MemoryAccess old_access = known_mem_accesses[addr].front();
+        packets::MemoryAccess old_access = known_mem_accesses[addr].front();
         known_mem_accesses[addr].pop_front();
         
-        if (old_access.type() != MemoryAccess::WRITE) {
+        if (old_access.type() != packets::MemoryAccess::WRITE) {
             WARN("Desync! Memory write at " TARGET_FMT_lx " but next expected access is read", addr);
             return 0;
         }
@@ -344,9 +361,9 @@ int check_unassigned_mem_w(CPUState *cpu, target_ulong pc, target_ulong addr,
         INFO("New unassigned write at 0x" TARGET_FMT_lx, addr);
         DEBUG("Current last device: %u set at time %lu", last_device, last_device_time);
 
-        MemoryAccess new_access;
+        packets::MemoryAccess new_access;
         new_access.set_address(addr);
-        new_access.set_type(MemoryAccess::WRITE);
+        new_access.set_type(packets::MemoryAccess::WRITE);
         new_access.set_device(last_device);
         
         std::string val((char*)buf, size);
@@ -355,11 +372,11 @@ int check_unassigned_mem_w(CPUState *cpu, target_ulong pc, target_ulong addr,
         std::string pkt;
         new_access.SerializeToString(&pkt);
         
-        if (send_pkt(PacketType::NEW_MEMORY_ACCESS, pkt)) {
+        if (send_pkt(packets::PacketType::NEW_MEMORY_ACCESS, pkt)) {
             ERROR("Failed to send memory access notification");
         }
         
-        last_device = MemoryAccess::UNKNOWN;
+        last_device = packets::MemoryAccess::UNKNOWN;
     }
     
     return 0;
@@ -374,19 +391,19 @@ int recv_symtab()
 {
     std::string pkt;
 
-    if (recv_pkt(PacketType::SYMBOLS, pkt)) {
+    if (recv_pkt(packets::PacketType::SYMBOLS, pkt)) {
         ERROR("Error receiving SYMBOLS packet");
         return -1;
     }
 
-    SymbolTable parsed_symtab;
+    packets::SymbolTable parsed_symtab;
 
     if (!parsed_symtab.ParseFromString(pkt)) {
         ERROR("Error parsing SYMBOLS packet");
         return -1;
     }
 
-    for (SymbolTable::Symbol sym : parsed_symtab.symbols()) {
+    for (packets::SymbolTable::Symbol sym : parsed_symtab.symbols()) {
         kallsyms[sym.name()] = sym.address();
         kernel_functions.insert(sym.address());
     }
@@ -400,19 +417,19 @@ int recv_mem_accesses()
 {
     std::string pkt;
 
-    if (recv_pkt(PacketType::OLD_MEMORY_ACCESSES, pkt)) {
+    if (recv_pkt(packets::PacketType::OLD_MEMORY_ACCESSES, pkt)) {
         ERROR("Error receiving OLD_MEMORY_ACCESSES packet");
         return -1;
     }
 
-    OldMemoryAccesses parsed_accesses;
+    packets::OldMemoryAccesses parsed_accesses;
 
     if (!parsed_accesses.ParseFromString(pkt)) {
         ERROR("Error parsing OLD_MEMORY_ACCESSES packet");
         return -1;
     }
 
-    for (MemoryAccess access : parsed_accesses.accesses()) {
+    for (packets::MemoryAccess access : parsed_accesses.accesses()) {
         known_mem_accesses[access.address()].push_back(access);
     }
 
@@ -464,6 +481,8 @@ bool init_plugin(void *self)
     uint32_t session_id;
     const char *server;
 
+    /* Callback registration */
+
     // May not be necessary but to afraid that not having this will silently break stuff
     panda_disable_tb_chaining();
     cb.before_block_exec_invalidate_opt = before_block_exec_invalidate_opt;
@@ -474,7 +493,17 @@ bool init_plugin(void *self)
     panda_register_callback(self, PANDA_CB_PHYS_MEM_AFTER_READ, cb);
     cb.phys_mem_after_write = check_unassigned_mem_w;
     panda_register_callback(self, PANDA_CB_PHYS_MEM_AFTER_WRITE, cb);
+    
+    panda_require("callstack_instr");
+    if (!init_callstack_instr_api()) {
+        ERROR("callstack_instr failed to initialize");
+        return false;
+    }
 
+    PPP_REG_CB("callstack_instr", on_call, add_call);
+    PPP_REG_CB("callstack_instr", on_ret, return_from_call);
+
+    /* Arg parsing */
     args = panda_get_args("rehost");
     
     session_id = panda_parse_uint32_req(args, "id", "The session ID of this QEMU runner");
@@ -484,15 +513,48 @@ bool init_plugin(void *self)
     srand(session_id);
 
     server = panda_parse_string_req(args, "server", "host port of the server that we should communicate information back to");
-    connect_master(server, session_id);
 
     panda_free_args(args);
 
+    /* Final init */
+    if (connect_master(server, session_id)) {
+        return false;
+    }
+
+
     return true;
+}
+
+void dump_calltree(packets::CallTree *pkt_call_tree)
+{
+    pkt_call_tree->set_address(current_branch->address);
+    for (auto subcall : current_branch->subcalls) {
+        current_branch = subcall;
+        packets::CallTree *new_pkt_tree = pkt_call_tree->add_called();
+        dump_calltree(new_pkt_tree);
+        current_branch = current_branch->parent;
+
+    }
 }
 
 void uninit_plugin(void *self)
 {
     INFO("Unloading plugin");
-    // TODO: Dump call trace to master
+    packets::CallTree pkt_call_tree;
+    unsigned i = 0;
+    while (current_branch->parent != NULL) {
+        i++;
+        current_branch = current_branch->parent;
+    }
+
+    INFO("We stopped emulation %u calls deep", i);
+
+    dump_calltree(&pkt_call_tree);
+
+    std::string pkt;
+    pkt_call_tree.SerializeToString(&pkt);
+    
+    if (send_pkt(packets::PacketType::CALL_TRACE, pkt)) {
+        ERROR("Failed to send final call trace");
+    }
 }

@@ -1,4 +1,5 @@
 syntax = "proto2";
+package packets;
 
 enum PacketType {
     SYMBOLS = 0;                // master->runner; map of symbol name to addr for breakpoints built into plugin
