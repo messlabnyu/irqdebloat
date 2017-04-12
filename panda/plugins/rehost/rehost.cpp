@@ -363,13 +363,20 @@ bool before_block_exec_invalidate_opt(CPUState *cpu, TranslationBlock *tb)
         }
     }
 
-    // search to see if we RET'd up to 10 items back in the return addr stack
-    for (int i = expected_rets.size()-1; i > ((int)(expected_rets.size()-10)) && i >= 0; i--) {
+    // search to see if we RET'd up to 5 items back in the return addr stack
+    for (int i = expected_rets.size()-1; i > ((int)(expected_rets.size()-5)) && i >= 0; i--) {
         if (tb->pc == expected_rets[i]) {
-            current_branch = current_branch->parent;
+            int num_rets = expected_rets.size() - i;
+            for (int j = 0; j < num_rets; j++) {
+                if (current_branch->parent) {
+                    current_branch = current_branch->parent;
+                } else {
+                    WARN("Attempt to RET to root function");
+                }
+            }
             
             depth -= expected_rets.size() - i;
-            DEBUG("Ret to " TARGET_FMT_lx, tb->pc);
+            DEBUG("Ret to " TARGET_FMT_lx " (skipped %d expected return addresses)", tb->pc, num_rets-1);
 
             expected_rets.erase(expected_rets.begin()+i, expected_rets.end());
 
