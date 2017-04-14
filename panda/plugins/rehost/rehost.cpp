@@ -142,6 +142,19 @@ bool emit_char_hook(CPUState *cpu, TranslationBlock *tb)
     return 0;
 }
 
+bool print_hook(CPUState *cpu, TranslationBlock *tb)
+{
+    uint8_t buf[1024];
+    CPUArchState *env = (CPUArchState*)cpu->env_ptr;
+    target_ulong str_ptr = env->regs[0]; // TODO: Architecture neutral
+
+    panda_virtual_memory_read(cpu, str_ptr, buf, sizeof(buf));
+
+    printf("%s", buf);
+    
+    return 0;
+}
+
 bool poweroff_hook(CPUState *cpu, TranslationBlock *tb)
 {
     INFO("Guest called poweroff");
@@ -196,6 +209,7 @@ std::unordered_set<target_ulong> kernel_functions;
 // func_name is called
 std::map<std::string, hook_func_t> readable_hooks = {
     {"emit_log_char", emit_char_hook},
+    {"printascii", skip_func}, // Appears this expects the UART to fully work so let's get rid of it for now
     {"init_IRQ", [](CPUState *cpu, TranslationBlock *tb)
         {
             return set_last_device(packets::MemoryAccess::INTERRUPT_CONTROLLER_DIST);
