@@ -132,15 +132,12 @@ bool set_last_device(packets::MemoryAccess::DeviceType type)
     return 0;
 }
 
-bool print_hook(CPUState *cpu, TranslationBlock *tb)
+bool emit_char_hook(CPUState *cpu, TranslationBlock *tb)
 {
-    uint8_t buf[1024];
     CPUArchState *env = (CPUArchState*)cpu->env_ptr;
-    target_ulong str_ptr = env->regs[0]; // TODO: Architecture neutral
+    target_ulong chr = env->regs[0]; // TODO: Architecture neutral
 
-    panda_virtual_memory_read(cpu, str_ptr, buf, sizeof(buf));
-
-    printf("%s", buf);
+    printf("%c", (char)chr);
     
     return 0;
 }
@@ -198,8 +195,7 @@ std::unordered_set<target_ulong> kernel_functions;
 // func_name->function: hook function to run when the kernel function
 // func_name is called
 std::map<std::string, hook_func_t> readable_hooks = {
-    {"printk", print_hook},
-    {"printascii", print_hook},
+    {"emit_log_char", emit_char_hook},
     {"init_IRQ", [](CPUState *cpu, TranslationBlock *tb)
         {
             return set_last_device(packets::MemoryAccess::INTERRUPT_CONTROLLER_DIST);
@@ -433,6 +429,17 @@ int recv_symtab()
     for (packets::SymbolTable::Symbol sym : parsed_symtab.symbols()) {
         kallsyms[sym.name()] = sym.address();
         kernel_functions.insert(sym.address());
+    }
+
+    for (auto hook : readable_hooks) {
+        std::string sym_name = hook.first;
+        hook_func_t callback = hook.second;
+        auto resolved_addr = kallsyms.find(sym_name);
+        if (resolved_addr != kallsyms.end()) {
+            hooks[resolved_addr->second].push_back(callback);
+        } else {
+            WARN("Function %s used in a hook is not present in kallsyms", sym_name.c_str());
+        }
     }
 
     INFO("Received %zu symbols", kallsyms.size());
