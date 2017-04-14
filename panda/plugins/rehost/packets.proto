@@ -6,6 +6,7 @@ enum PacketType {
     OLD_MEMORY_ACCESSES = 1;    // master->runner; map of memory addr -> list of past memory accesses/reponses
     NEW_MEMORY_ACCESS = 2;      // runner->master; memory address, type (R/W), and value if write
     CALL_TRACE = 3;             // runner->master; complete trace of all function calls in this run
+    GUEST_LOG = 4;              // runner->master; everything we collected from hooking printk
 }
 
 message SymbolTable {
@@ -48,4 +49,8 @@ message OldMemoryAccesses {
 message CallTree {
     required uint64 address = 1;
     repeated CallTree called = 2;
+}
+
+message GuestLog {
+    required string log = 1;
 }

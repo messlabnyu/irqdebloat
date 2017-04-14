@@ -65,8 +65,7 @@ int recv_pkt(packets::PacketType type, std::string &pkt)
 
     pkt_len = ntohl(pkt_len);
     if (pkt_len == 0) {
-        ERROR("Bad packet length recieved %d", pkt_len);
-        return -1;
+        return 0;
     }
 
     c_pkt = (char*)malloc(pkt_len);
@@ -119,6 +118,9 @@ int send_pkt(packets::PacketType type, const std::string &pkt)
 packets::MemoryAccess::DeviceType last_device = packets::MemoryAccess::UNKNOWN;
 clock_t last_device_time = 0;
 
+// Log from hooking printk & co.
+std::string guest_log;
+
 
 /*
  * Guest function hooks
@@ -135,13 +137,15 @@ bool set_last_device(packets::MemoryAccess::DeviceType type)
 bool emit_char_hook(CPUState *cpu, TranslationBlock *tb)
 {
     CPUArchState *env = (CPUArchState*)cpu->env_ptr;
-    target_ulong chr = env->regs[0]; // TODO: Architecture neutral
+    char chr = (char)env->regs[0]; // TODO: Architecture neutral
 
+    guest_log += chr;
     printf("%c", (char)chr);
     
     return 0;
 }
 
+// Not used
 bool print_hook(CPUState *cpu, TranslationBlock *tb)
 {
     uint8_t buf[1024];
@@ -335,10 +339,6 @@ int check_unassigned_mem_r(CPUState *cpu, target_ulong pc, target_ulong addr,
         memcpy(buf, old_access.value().c_str(), size);
 
     } else {
-        // TODO: Spin detection
-        //INFO("New unassigned read at 0x" TARGET_FMT_lx, addr);
-        //DEBUG("Current last device: %u set at time %lu", last_device, last_device_time);
-
         for (unsigned i = 0; i < size; i++) {
             *(uint8_t *)(buf+i) = rand() % 256;
         }
@@ -394,10 +394,6 @@ int check_unassigned_mem_w(CPUState *cpu, target_ulong pc, target_ulong addr,
             WARN("Memory write at " TARGET_FMT_lx " has a different value now", addr);
         }
     } else {
-        // TODO: Spin detection
-        INFO("New unassigned write at 0x" TARGET_FMT_lx, addr);
-        DEBUG("Current last device: %u set at time %lu", last_device, last_device_time);
-
         packets::MemoryAccess new_access;
         new_access.set_address(addr);
         new_access.set_type(packets::MemoryAccess::WRITE);
@@ -603,5 +599,14 @@ void uninit_plugin(void *self)
     
     if (send_pkt(packets::PacketType::CALL_TRACE, pkt)) {
         ERROR("Failed to send final call trace");
+    }
+
+    packets::GuestLog log;
+    log.set_log(guest_log);
+
+    log.SerializeToString(&pkt);
+
+    if (send_pkt(packets::PacketType::GUEST_LOG, pkt)) {
+        ERROR("Failed to send final guest log");
     }
 }
