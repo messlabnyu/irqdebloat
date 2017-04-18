@@ -65,6 +65,7 @@ int recv_pkt(packets::PacketType type, std::string &pkt)
 
     pkt_len = ntohl(pkt_len);
     if (pkt_len == 0) {
+        pkt = std::string();
         return 0;
     }
 
@@ -227,6 +228,11 @@ std::map<std::string, hook_func_t> readable_hooks = {
     {"uart_register_driver", [](CPUState *cpu, TranslationBlock *tb)
         {
             return set_last_device(packets::MemoryAccess::UART);
+        }
+    },
+    {"*timer_init", [](CPUState *cpu, TranslationBlock *tb)
+        {
+            return set_last_device(packets::MemoryAccess::TIMER);
         }
     },
     {"die", poweroff_hook},
@@ -441,14 +447,24 @@ int recv_symtab()
         kernel_functions.insert(sym.address());
     }
 
+    // Transform the readable_hooks into their address equivalents
     for (auto hook : readable_hooks) {
         std::string sym_name = hook.first;
         hook_func_t callback = hook.second;
-        auto resolved_addr = kallsyms.find(sym_name);
-        if (resolved_addr != kallsyms.end()) {
-            hooks[resolved_addr->second].push_back(callback);
+        
+        if (sym_name[0] == '*') {
+            for (auto ksym : kallsyms) {
+                if (ksym.first.find(sym_name.substr(1)) != std::string::npos) {
+                    hooks[ksym.second].push_back(callback);
+                }
+            }
         } else {
-            WARN("Function %s used in a hook is not present in kallsyms", sym_name.c_str());
+            auto resolved_addr = kallsyms.find(sym_name);
+            if (resolved_addr != kallsyms.end()) {
+                hooks[resolved_addr->second].push_back(callback);
+            } else {
+                WARN("Function %s used in a hook is not present in kallsyms", sym_name.c_str());
+            }
         }
     }
 
@@ -476,6 +492,8 @@ int recv_mem_accesses()
     for (packets::MemoryAccess access : parsed_accesses.accesses()) {
         known_mem_accesses[access.address()].push_back(access);
     }
+
+    INFO("Received %d known memory accesses", parsed_accesses.accesses().size());
 
     return 0;
 }
@@ -514,6 +532,8 @@ int connect_master(const char *server_string, uint32_t session_id)
 
     recv_symtab();
     recv_mem_accesses();
+
+    DEBUG("Fully synced with master. Beginning emulation");
 
     return 0;
 }
@@ -562,6 +582,7 @@ bool init_plugin(void *self)
 
     /* Final init */
     if (connect_master(server, session_id)) {
+        WARN("Failed to connect to master and sync");
         return false;
     }
 

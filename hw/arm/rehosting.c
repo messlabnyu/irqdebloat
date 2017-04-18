@@ -102,12 +102,8 @@ static void parse_mem_map(char *map_str)
                 type = MEM;
             else if (strcmp(name, "NAND") == 0)
                 type = NAND;
-            else if (strcmp(name, "NAND_CONTROLLER") == 0)
-                type = NAND_CONTROLLER;
             else if (strcmp(name, "DMAC") == 0)
                 type = DMAC;
-            else if (strcmp(name, "CPUPERIPHS") == 0)
-                type = CPUPERIPHS;
             else if (strcmp(name, "GIC_DIST") == 0)
                 type = GIC_DIST;
             else if (strcmp(name, "GIC_CPU") == 0)
@@ -118,16 +114,6 @@ static void parse_mem_map(char *map_str)
                 type = GIC_ITS;
             else if (strcmp(name, "GIC_REDIST") == 0)
                 type = GIC_REDIST;
-            else if (strcmp(name, "UART") == 0)
-                type = UART;
-            else if (strcmp(name, "GPIO") == 0)
-                type = GPIO;
-            else if (strcmp(name, "GP_TIMER0") == 0)
-                type = GP_TIMER0;
-            else if (strcmp(name, "GP_TIMER1") == 0)
-                type = GP_TIMER1;
-            else if (strcmp(name, "DG_TIMER") == 0)
-                type = DG_TIMER;
             else {
                 error_report("Region '%s' doesn't exist", name);
                 pos = strtok(NULL, ";");
