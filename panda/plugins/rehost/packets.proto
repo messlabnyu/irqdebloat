@@ -4,9 +4,10 @@ package packets;
 enum PacketType {
     SYMBOLS = 0;                // master->runner; map of symbol name to addr for breakpoints built into plugin
     OLD_MEMORY_ACCESSES = 1;    // master->runner; map of memory addr -> list of past memory accesses/reponses
-    NEW_MEMORY_ACCESS = 2;      // runner->master; memory address, type (R/W), and value if write
-    CALL_TRACE = 3;             // runner->master; complete trace of all function calls in this run
-    GUEST_LOG = 4;              // runner->master; everything we collected from hooking printk
+    NOP_FUNCTIONS = 2;          // master->runner; list of function addrs what should be NOP'd
+    NEW_MEMORY_ACCESS = 3;      // runner->master; memory address, type (R/W), and value if write
+    CALL_TRACE = 4;             // runner->master; complete trace of all function calls in this run
+    GUEST_LOG = 5;              // runner->master; everything we collected from hooking printk
 }
 
 message SymbolTable {
@@ -43,6 +44,10 @@ message MemoryAccess {
 
 message OldMemoryAccesses {
     repeated MemoryAccess accesses = 1;
+}
+
+message NOPFunctions {
+    repeated uint64 addresses = 1;
 }
 
 // Recursive definition for a call tree

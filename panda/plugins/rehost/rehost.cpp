@@ -468,7 +468,7 @@ int recv_symtab()
         }
     }
 
-    INFO("Received %zu symbols", kallsyms.size());
+    DEBUG("Received %zu symbols", kallsyms.size());
     
     return 0;
 }
@@ -493,8 +493,32 @@ int recv_mem_accesses()
         known_mem_accesses[access.address()].push_back(access);
     }
 
-    INFO("Received %d known memory accesses", parsed_accesses.accesses().size());
+    DEBUG("Received %d known memory accesses", parsed_accesses.accesses().size());
 
+    return 0;
+}
+
+int recv_nop_functions()
+{
+    std::string pkt;
+
+    if (recv_pkt(packets::PacketType::NOP_FUNCTIONS, pkt)) {
+        ERROR("Error receiving NOP_FUNCTIONS packet");
+        return -1;
+    }
+
+    packets::NOPFunctions parsed_nops;
+
+    if (!parsed_nops.ParseFromString(pkt)) {
+        ERROR("Error parsing NOP_FUNCTIONS packet");
+        return -1;
+    }
+
+    for (uint64_t func : parsed_nops.addresses()) {
+        DEBUG("Adding 0x%08lx as a function to NOP", func);
+        hooks[func].push_back(skip_func);
+    }
+    
     return 0;
 }
 
@@ -532,8 +556,9 @@ int connect_master(const char *server_string, uint32_t session_id)
 
     recv_symtab();
     recv_mem_accesses();
-
-    DEBUG("Fully synced with master. Beginning emulation");
+    recv_nop_functions();
+    
+    INFO("Fully synced with master. Beginning emulation");
 
     return 0;
 }
@@ -630,4 +655,10 @@ void uninit_plugin(void *self)
     if (send_pkt(packets::PacketType::GUEST_LOG, pkt)) {
         ERROR("Failed to send final guest log");
     }
+    
+    int ok = 0;
+
+    ok = read(master_sockfd, &ok, sizeof(ok));
+
+    INFO("Unloaded");
 }
