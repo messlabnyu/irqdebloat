@@ -243,7 +243,6 @@ std::map<std::string, hook_func_t> readable_hooks = {
 // so we know how to respond and/or if we've diverged
 std::unordered_map<target_ulong, std::deque<packets::MemoryAccess>> known_mem_accesses;
 
-// addr->vector<Tree>
 CallTree call_tree;
 CallTree *current_branch = &call_tree;
 size_t depth;
@@ -656,9 +655,5 @@ void uninit_plugin(void *self)
         ERROR("Failed to send final guest log");
     }
     
-    int ok = 0;
-
-    ok = read(master_sockfd, &ok, sizeof(ok));
-
     INFO("Unloaded");
 }
