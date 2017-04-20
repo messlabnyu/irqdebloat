@@ -120,7 +120,7 @@ static void parse_mem_map(char *map_str)
                 continue;
             }
 
-            DEBUG("Adding region: %s @ 0x%lx-0x%lx\n", name, start, end);
+            DEBUG("Adding region: %s @ 0x%lx-0x%lx", name, start, end);
             memmap[type].base = start;
             memmap[type].size = (end - start);
         } else {
