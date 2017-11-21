@@ -27,13 +27,16 @@ PANDAENDCOMMENT */
 #include "callstack_instr/callstack_instr.h"
 #include "callstack_instr/callstack_instr_ext.h"
 
+
 extern "C" {
 
 bool init_plugin(void *);
 void uninit_plugin(void *);
 
-}
+// Declaration from sysemu/sysemu.h
+void qemu_system_shutdown_request();
 
+}
 
 // Connection stuff
 int master_sockfd;
@@ -127,6 +130,18 @@ std::string guest_log;
  * Guest function hooks
  */
 
+// set ARG0_REG to the register value which contains the first argument to a
+// function based on the standard calling convention for that arch
+#if defined(TARGET_ARM)
+#define ARG0_REG (((CPUArchState*)cpu->env_ptr)->regs[0])
+
+#elif defined(TARGET_MIPS)
+#define ARG0_REG (((CPUArchState*)cpu->env_ptr)->regs[4])
+
+#else
+#define ARG0_REG (0)
+#endif
+
 bool set_last_device(packets::MemoryAccess::DeviceType type)
 {
     last_device = type;
@@ -137,8 +152,7 @@ bool set_last_device(packets::MemoryAccess::DeviceType type)
 
 bool emit_char_hook(CPUState *cpu, TranslationBlock *tb)
 {
-    CPUArchState *env = (CPUArchState*)cpu->env_ptr;
-    char chr = (char)env->regs[0]; // TODO: Architecture neutral
+    char chr = (char)ARG0_REG;
 
     guest_log += chr;
     printf("%c", (char)chr);
@@ -146,14 +160,12 @@ bool emit_char_hook(CPUState *cpu, TranslationBlock *tb)
     return 0;
 }
 
-// Not used
+// Not currently used - emit_char_hook is used so we can get formatted output
 bool print_hook(CPUState *cpu, TranslationBlock *tb)
 {
     uint8_t buf[1024];
-    CPUArchState *env = (CPUArchState*)cpu->env_ptr;
-    target_ulong str_ptr = env->regs[0]; // TODO: Architecture neutral
 
-    panda_virtual_memory_read(cpu, str_ptr, buf, sizeof(buf));
+    panda_virtual_memory_read(cpu, ARG0_REG, buf, sizeof(buf));
 
     printf("%s", buf);
     
@@ -162,8 +174,8 @@ bool print_hook(CPUState *cpu, TranslationBlock *tb)
 
 bool poweroff_hook(CPUState *cpu, TranslationBlock *tb)
 {
-    INFO("Guest called poweroff");
-    // TODO: Force QEMU shutdown
+    INFO("Kernel exiting, stopping qemu early");
+    qemu_system_shutdown_request();
     
     return 0;
 }
@@ -177,12 +189,27 @@ bool poweroff_hook(CPUState *cpu, TranslationBlock *tb)
  */
 std::unordered_set<target_ulong> patched_funcs;
 
-// mov r0, #0; bx lr
-// TODO: architecture-independent
-uint8_t patch_asm[] = {0x00, 0x00, 0xa0, 0xe3, 0x1e, 0xff, 0x2f, 0xe1};
+#if defined(TARGET_ARM)
+    // mov r0, #0; bx lr
+    uint8_t patch_asm[] = {0x00, 0x00, 0xa0, 0xe3, 0x1e, 0xff, 0x2f, 0xe1};
+
+#elif defined(TARGET_MIPS)
+#ifdef TARGET_WORDS_BIGENDIAN
+    // big e
+    // move $v0, $0; jr $ra
+    uint8_t patch_asm[] = {0x20, 0x02, 0x00, 0x00, 0x03, 0xe0, 0x00, 0x08};
+#else
+    // little e
+    uint8_t patch_asm[] = {0x00, 0x00, 0x02, 0x20, 0x08, 0x00, 0xe0, 0x03};
+#endif
+
+#else
+    uint8_t patch_asm[] = {};
+#endif
 
 bool skip_func(CPUState *cpu, TranslationBlock *tb)
 {
+
     target_ulong addr = tb->pc;
 
     if (patched_funcs.find(tb->pc) == patched_funcs.end()) {
@@ -235,8 +262,7 @@ std::map<std::string, hook_func_t> readable_hooks = {
             return set_last_device(packets::MemoryAccess::TIMER);
         }
     },
-    {"die", poweroff_hook},
-    {"machine_restart", poweroff_hook},
+    {"panic", poweroff_hook},
 };
 
 // addr->queue: ordered list of all previously encountered memory accesses
