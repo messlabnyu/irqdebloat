@@ -5,11 +5,11 @@
 
 typedef bool (*hook_func_t)(CPUState *, TranslationBlock *);
 
-class CallTree {
+class CallGraph {
     public:
         target_ulong address = 0;
-        CallTree *parent = NULL;
-        std::vector<CallTree*> subcalls;
+        CallGraph *parent = NULL;
+        std::vector<CallGraph*> subcalls;
 };
 
 /* Modified from `callstack_instr` */

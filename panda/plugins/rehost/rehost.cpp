@@ -118,10 +118,6 @@ int send_pkt(packets::PacketType type, const std::string &pkt)
     return 0;
 }
 
-// State tracking
-packets::MemoryAccess::DeviceType last_device = packets::MemoryAccess::UNKNOWN;
-clock_t last_device_time = 0;
-
 // Log from hooking printk & co.
 std::string guest_log;
 
@@ -141,14 +137,6 @@ std::string guest_log;
 #else
 #define ARG0_REG (0)
 #endif
-
-bool set_last_device(packets::MemoryAccess::DeviceType type)
-{
-    last_device = type;
-    last_device_time = clock();
-
-    return 0;
-}
 
 bool emit_char_hook(CPUState *cpu, TranslationBlock *tb)
 {
@@ -242,26 +230,6 @@ std::unordered_set<target_ulong> kernel_functions;
 std::map<std::string, hook_func_t> readable_hooks = {
     {"emit_log_char", emit_char_hook},
     {"printascii", skip_func}, // Appears this expects the UART to fully work so let's get rid of it for now
-    {"init_IRQ", [](CPUState *cpu, TranslationBlock *tb)
-        {
-            return set_last_device(packets::MemoryAccess::INTERRUPT_CONTROLLER_DIST);
-        }
-    },
-    {"gic_cpu_init", [](CPUState *cpu, TranslationBlock *tb)
-        {
-            return set_last_device(packets::MemoryAccess::INTERRUPT_CONTROLLER_CPU);
-        }
-    },
-    {"uart_register_driver", [](CPUState *cpu, TranslationBlock *tb)
-        {
-            return set_last_device(packets::MemoryAccess::UART);
-        }
-    },
-    {"*timer_init", [](CPUState *cpu, TranslationBlock *tb)
-        {
-            return set_last_device(packets::MemoryAccess::TIMER);
-        }
-    },
     {"panic", poweroff_hook},
 };
 
@@ -269,8 +237,8 @@ std::map<std::string, hook_func_t> readable_hooks = {
 // so we know how to respond and/or if we've diverged
 std::unordered_map<target_ulong, std::deque<packets::MemoryAccess>> known_mem_accesses;
 
-CallTree call_tree;
-CallTree *current_branch = &call_tree;
+CallGraph call_tree;
+CallGraph *current_branch = &call_tree;
 size_t depth;
 
 
@@ -278,10 +246,40 @@ size_t depth;
  * PANDA callback functions
  */
 
+void debug_callstack()
+{
+    DEBUG("---START TRACE---");
+    for (auto cur_graph = current_branch; cur_graph != nullptr; cur_graph = cur_graph->parent) {
+        DEBUG("0x" TARGET_FMT_lx, cur_graph->address);
+    }
+    DEBUG("---END TRACE---");
+}
+
+packets::CallTree *get_current_callstack()
+{
+    CallGraph *cur_graph = current_branch;
+    packets::CallTree *calltree = new packets::CallTree();
+
+    while (cur_graph->parent != nullptr) {
+        calltree->set_address(cur_graph->address);
+
+        packets::CallTree *parent_node = new packets::CallTree();
+        parent_node->mutable_called()->AddAllocated(calltree);
+
+        calltree = parent_node;
+        cur_graph = cur_graph->parent;
+    }
+
+    calltree->set_address(cur_graph->address);
+
+    return calltree;
+}
+
 void add_call(CPUState *env, target_ulong func)
 {
 	if (kernel_functions.find(func) != kernel_functions.end()) {
-		CallTree *new_branch = new CallTree();
+        debug_callstack();
+		CallGraph *new_branch = new CallGraph();
 		new_branch->address = func;
 		new_branch->parent = current_branch;
 		current_branch->subcalls.push_back(new_branch);
@@ -334,6 +332,20 @@ bool before_block_exec_invalidate_opt(CPUState *cpu, TranslationBlock *tb)
         DEBUG("Invalidating the translation block at 0x" TARGET_FMT_lx, tb->pc);
     }
 
+    // If we're about to exec a known kernel function and the current_branch
+    // wasn't updated by `add_call` (the callback from callstack_instr)
+    if (kernel_functions.find(tb->pc) != kernel_functions.end() && current_branch->address != tb->pc) {
+        // Mark it as a call
+        DEBUG("Found undiscovered call to 0x" TARGET_FMT_lx, tb->pc);
+        debug_callstack();
+		CallGraph *new_branch = new CallGraph();
+		new_branch->address = tb->pc;
+		new_branch->parent = current_branch;
+		current_branch->subcalls.push_back(new_branch);
+		current_branch = new_branch;
+		depth++;
+    }
+
     return ret;
 }
 
@@ -377,7 +389,7 @@ int check_unassigned_mem_r(CPUState *cpu, target_ulong pc, target_ulong addr,
         packets::MemoryAccess new_access;
         new_access.set_address(addr);
         new_access.set_type(packets::MemoryAccess::READ);
-        new_access.set_device(last_device);
+        new_access.set_allocated_callstack(get_current_callstack());
         
         std::string response((char*)buf, size);
         new_access.set_value(response);
@@ -388,8 +400,6 @@ int check_unassigned_mem_r(CPUState *cpu, target_ulong pc, target_ulong addr,
         if (send_pkt(packets::PacketType::NEW_MEMORY_ACCESS, pkt)) {
             ERROR("Failed to send memory access notification");
         }
-        
-        last_device = packets::MemoryAccess::UNKNOWN;
     }
     
     return 0;
@@ -428,7 +438,7 @@ int check_unassigned_mem_w(CPUState *cpu, target_ulong pc, target_ulong addr,
         packets::MemoryAccess new_access;
         new_access.set_address(addr);
         new_access.set_type(packets::MemoryAccess::WRITE);
-        new_access.set_device(last_device);
+        new_access.set_allocated_callstack(get_current_callstack());
         
         std::string val((char*)buf, size);
         new_access.set_value(val);
@@ -439,8 +449,6 @@ int check_unassigned_mem_w(CPUState *cpu, target_ulong pc, target_ulong addr,
         if (send_pkt(packets::PacketType::NEW_MEMORY_ACCESS, pkt)) {
             ERROR("Failed to send memory access notification");
         }
-        
-        last_device = packets::MemoryAccess::UNKNOWN;
     }
     
     return 0;
@@ -647,7 +655,6 @@ void dump_calltree(packets::CallTree *pkt_call_tree)
         packets::CallTree *new_pkt_tree = pkt_call_tree->add_called();
         dump_calltree(new_pkt_tree);
         current_branch = current_branch->parent;
-
     }
 }
 
