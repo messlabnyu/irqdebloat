@@ -9,6 +9,7 @@ class CallGraph {
     public:
         target_ulong address = 0;
         CallGraph *parent = NULL;
+        target_ulong parent_ret = 0;
         std::vector<CallGraph*> subcalls;
 };
 

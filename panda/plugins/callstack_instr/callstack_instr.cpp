@@ -18,6 +18,7 @@ PANDAENDCOMMENT */
 
 #include <unordered_map>
 #include <set>
+#include <unordered_set>
 #include <vector>
 #include <algorithm>
 
@@ -101,6 +102,10 @@ std::unordered_map<stackid, std::vector<target_ulong>> function_stacks;
 std::unordered_map<target_ulong, instr_type> call_cache;
 int last_ret_size = 0;
 
+// List of known functions that we always mark a call when we see run
+std::unordered_set<target_ulong> known_functions;
+
+
 static inline bool in_kernelspace(CPUArchState* env) {
 #if defined(TARGET_I386)
     return ((env->hflags & HF_CPL_MASK) == 0);
@@ -175,17 +180,25 @@ static stackid get_stackid(CPUArchState* env) {
 #endif
 }
 
-/*
- * We need to special case ARM stuff because ARM is special and capstone is as well.
- * ngregory - 11 Apr 2017
- */
 bool is_arm_call(csh handle, cs_insn *insn, target_ulong pc, int size) {
-    // Call must be a branch with link *
-    if (insn->id != ARM_INS_BL && insn->id != ARM_INS_BLX) {
-        return false;
+    // Must be a jump of some kind
+	if (!cs_insn_group(handle, insn, CS_GRP_JUMP)) {
+		return false;
+	}
+
+    // Either needs to jump to a known function, or be a BL*
+    if (insn->id == ARM_INS_BL || insn->id == ARM_INS_BLX) {
+        return true;
     }
 
-    return true;
+    cs_arm details = insn->detail->arm;
+
+    if (details.operands[0].type == ARM_OP_IMM && 
+            known_functions.find(details.operands[0].imm) != known_functions.end()) {
+        return true;
+    }
+
+    return false;
 }
 
 instr_type disas_block(CPUArchState* env, target_ulong pc, int size) {
@@ -223,8 +236,9 @@ instr_type disas_block(CPUArchState* env, target_ulong pc, int size) {
 #elif defined(TARGET_ARM)
     if (is_arm_call(handle, end, pc, size)) {
         res = INSTR_CALL;
+    }
     // ngregory 30 Nov. 2017: INSTR_RET doesn't do anything
-    } else {
+    else {
         res = INSTR_UNKNOWN;
     }
 #endif
@@ -255,7 +269,7 @@ int before_block_exec(CPUState *cpu, TranslationBlock *tb) {
             //printf("Matched at depth %d\n", v.size()-i);
             //v.erase(v.begin()+i, v.end());
 
-            PPP_RUN_CB(on_ret, cpu, w[i]);
+            PPP_RUN_CB(on_ret, cpu, w[i], tb->pc);
             v.erase(v.begin()+i, v.end());
             w.erase(w.begin()+i, w.end());
 
@@ -281,7 +295,7 @@ int after_block_exec(CPUState* cpu, TranslationBlock *tb) {
         cpu_get_tb_cpu_state(env, &pc, &cs_base, &flags);
         function_stacks[get_stackid(env)].push_back(pc);
 
-        PPP_RUN_CB(on_call, cpu, pc);
+        PPP_RUN_CB(on_call, cpu, pc, tb->pc + tb->size);
     }
     else if (tb_type == INSTR_RET) {
         //printf("Just executed a RET in TB " TARGET_FMT_lx "\n", tb->pc);
@@ -379,7 +393,9 @@ void get_prog_point(CPUState* cpu, prog_point *p) {
     p->pc = cpu->panda_guest_pc;
 }
 
-
+void callstack_add_function(target_ulong addr) {
+    known_functions.insert(addr);
+}
 
 bool init_plugin(void *self) {
 #if defined(TARGET_I386)

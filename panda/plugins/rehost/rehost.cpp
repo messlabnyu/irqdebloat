@@ -25,6 +25,7 @@ PANDAENDCOMMENT */
 #include "packets.pb.h"
 
 #include "callstack_instr/callstack_instr.h"
+// For callstack_add_function
 #include "callstack_instr/callstack_instr_ext.h"
 
 
@@ -210,7 +211,6 @@ bool skip_func(CPUState *cpu, TranslationBlock *tb)
     }
 }
 
-
 /*
  * Plugin-wide maps
  */
@@ -246,15 +246,6 @@ size_t depth;
  * PANDA callback functions
  */
 
-void debug_callstack()
-{
-    DEBUG("---START TRACE---");
-    for (auto cur_graph = current_branch; cur_graph != nullptr; cur_graph = cur_graph->parent) {
-        DEBUG("0x" TARGET_FMT_lx, cur_graph->address);
-    }
-    DEBUG("---END TRACE---");
-}
-
 packets::CallTree *get_current_callstack()
 {
     CallGraph *cur_graph = current_branch;
@@ -275,20 +266,20 @@ packets::CallTree *get_current_callstack()
     return calltree;
 }
 
-void add_call(CPUState *env, target_ulong func)
+void add_call(CPUState *env, target_ulong called_func, target_ulong ret_addr)
 {
-	if (kernel_functions.find(func) != kernel_functions.end()) {
-        debug_callstack();
+	if (kernel_functions.find(called_func) != kernel_functions.end()) {
 		CallGraph *new_branch = new CallGraph();
-		new_branch->address = func;
+		new_branch->address = called_func;
 		new_branch->parent = current_branch;
+        new_branch->parent_ret = ret_addr;
 		current_branch->subcalls.push_back(new_branch);
 		current_branch = new_branch;
 		depth++;
 	}
 }
 
-void return_from_call(CPUState *env, target_ulong func)
+void return_from_call(CPUState *env, target_ulong func, target_ulong ret_addr)
 {
     /*
      * callstack_instr doesn't really look for RET instructions, but
@@ -303,12 +294,12 @@ void return_from_call(CPUState *env, target_ulong func)
         // Walk until we find the branch where addr is what we're returning from
         // In 99% of cases this loop won't ever iterate because current_branch->addr
         // is likely already `func`
-        while (current_branch->address != func && current_branch->parent != NULL) {
+        while (current_branch->parent_ret != ret_addr && current_branch->parent != nullptr) {
             depth--;
             current_branch = current_branch->parent;
         }
 
-        if (current_branch->parent == NULL) {
+        if (current_branch->parent == nullptr) {
             WARN("Couldn't find CALL corresponding to ret (from func " TARGET_FMT_lx ")!", func);
         } else {
             depth--;
@@ -330,20 +321,6 @@ bool before_block_exec_invalidate_opt(CPUState *cpu, TranslationBlock *tb)
 
     if (ret) {
         DEBUG("Invalidating the translation block at 0x" TARGET_FMT_lx, tb->pc);
-    }
-
-    // If we're about to exec a known kernel function and the current_branch
-    // wasn't updated by `add_call` (the callback from callstack_instr)
-    if (kernel_functions.find(tb->pc) != kernel_functions.end() && current_branch->address != tb->pc) {
-        // Mark it as a call
-        DEBUG("Found undiscovered call to 0x" TARGET_FMT_lx, tb->pc);
-        debug_callstack();
-		CallGraph *new_branch = new CallGraph();
-		new_branch->address = tb->pc;
-		new_branch->parent = current_branch;
-		current_branch->subcalls.push_back(new_branch);
-		current_branch = new_branch;
-		depth++;
     }
 
     return ret;
@@ -478,6 +455,8 @@ int recv_symtab()
     for (packets::SymbolTable::Symbol sym : parsed_symtab.symbols()) {
         kallsyms[sym.name()] = sym.address();
         kernel_functions.insert(sym.address());
+        
+        callstack_add_function(sym.address());
     }
 
     // Transform the readable_hooks into their address equivalents
