@@ -346,13 +346,13 @@ int check_unassigned_mem_r(CPUState *cpu, target_ulong pc, target_ulong addr,
         known_mem_accesses[addr].pop_front();
         
         if (old_access.type() != packets::MemoryAccess::READ) {
-            WARN("Desync! Memory read at " TARGET_FMT_lx " but next expected access is write", addr);
+            WARN("Desync! Memory read at 0x" TARGET_FMT_lx " but next expected access is write", addr);
             return 0;
         }
 
         uint64_t old_size = old_access.value().length();
         if (old_size != size) {
-            WARN("Desync! Memory read at " TARGET_FMT_lx " was size %lu before, now is " TARGET_FMT_lx, addr, old_size, size);
+            WARN("Desync! Memory read at 0x" TARGET_FMT_lx " was size %lu before, now is " TARGET_FMT_lx, addr, old_size, size);
             return 0;
         }
 
@@ -398,13 +398,13 @@ int check_unassigned_mem_w(CPUState *cpu, target_ulong pc, target_ulong addr,
         known_mem_accesses[addr].pop_front();
         
         if (old_access.type() != packets::MemoryAccess::WRITE) {
-            WARN("Desync! Memory write at " TARGET_FMT_lx " but next expected access is read", addr);
+            WARN("Desync! Memory write at 0x" TARGET_FMT_lx " but next expected access is read", addr);
             return 0;
         }
 
         uint64_t old_size = old_access.value().length();
         if (old_size != size) {
-            WARN("Desync! Memory write at " TARGET_FMT_lx " was size %lu before, now is " TARGET_FMT_lx, addr, old_size, size);
+            WARN("Desync! Memory write at 0x" TARGET_FMT_lx " was size %lu before, now is " TARGET_FMT_lx, addr, old_size, size);
             return 0;
         }
 
@@ -626,33 +626,32 @@ bool init_plugin(void *self)
     return true;
 }
 
-void dump_calltree(packets::CallTree *pkt_call_tree)
+void dump_calltree(packets::CallTree *pkt_call_tree, CallGraph *branch, size_t depth)
 {
-    pkt_call_tree->set_address(current_branch->address);
-    for (auto subcall : current_branch->subcalls) {
-        current_branch = subcall;
+    pkt_call_tree->set_address(branch->address);
+    // Protobuf decoding dies if we're too recursive, so limit ourselves. Anything
+    // beyond 50 is a bug anyways.
+    if (depth > 50) {
+        return;
+    }
+    for (auto subcall : branch->subcalls) {
         packets::CallTree *new_pkt_tree = pkt_call_tree->add_called();
-        dump_calltree(new_pkt_tree);
-        current_branch = current_branch->parent;
+        dump_calltree(new_pkt_tree, subcall, depth+1);
     }
 }
 
 void uninit_plugin(void *self)
 {
     INFO("Unloading plugin");
+    INFO("We stopped emulation %lu calls deep", depth);
+
     packets::CallTree pkt_call_tree;
-    unsigned i = 0;
-    while (current_branch->parent != NULL) {
-        i++;
-        current_branch = current_branch->parent;
-    }
-
-    INFO("We stopped emulation %u calls deep", i);
-
-    dump_calltree(&pkt_call_tree);
+    dump_calltree(&pkt_call_tree, &call_tree, 0);
 
     std::string pkt;
     pkt_call_tree.SerializeToString(&pkt);
+
+    DEBUG("Sending call tree");
     
     if (send_pkt(packets::PacketType::CALL_TRACE, pkt)) {
         ERROR("Failed to send final call trace");
@@ -663,9 +662,11 @@ void uninit_plugin(void *self)
 
     log.SerializeToString(&pkt);
 
+    DEBUG("Sending serial log");
+
     if (send_pkt(packets::PacketType::GUEST_LOG, pkt)) {
         ERROR("Failed to send final guest log");
     }
-    
+
     INFO("Unloaded");
 }
