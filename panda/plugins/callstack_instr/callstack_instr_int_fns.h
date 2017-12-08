@@ -25,4 +25,6 @@ void pandalog_callstack_free(Panda__CallStack *cs);
 
 void callstack_add_function(target_ulong addr);
 
+Panda__CallStack *get_current_function_stack(void);
+
 #endif

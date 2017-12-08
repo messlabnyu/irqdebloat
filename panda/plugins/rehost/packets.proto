@@ -29,7 +29,7 @@ message MemoryAccess {
     }
     required AccessType type = 2;
 
-    required CallTree callstack = 3;
+    repeated uint64 callstack = 3;
 
     optional bytes value = 4;  // Stored as a string (bytes) so we can handle arbitrary length R/Ws
 }

@@ -1871,7 +1871,7 @@ void dwarf_log_callsite(CPUState *cpu, const char *file_callee, const char *fn_c
     return;
 }
 
-void on_call(CPUState *cpu, target_ulong pc, target_ulong ret) {
+void on_call(CPUState *cpu, target_ulong pc, target_ulong ret, target_ulong stackid) {
     if (!correct_asid(cpu)) return;
     auto it = std::lower_bound(line_range_list.begin(), line_range_list.end(), pc, CompareRangeAndPC());
     if (it == line_range_list.end() || pc < it->lowpc ){
@@ -1921,7 +1921,7 @@ void on_call(CPUState *cpu, target_ulong pc, target_ulong ret) {
 }
 
 // pc_func - of the function we are returning from
-void on_ret(CPUState *cpu, target_ulong pc_func, target_ulong ret) {
+void on_ret(CPUState *cpu, target_ulong pc_func, target_ulong ret, target_ulong stackid) {
     if (!correct_asid(cpu)) return;
     //printf(" on_ret address: %x\n", func);
     auto it = std::lower_bound(line_range_list.begin(), line_range_list.end(), pc_func, CompareRangeAndPC());

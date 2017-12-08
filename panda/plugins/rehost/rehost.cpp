@@ -25,7 +25,7 @@ PANDAENDCOMMENT */
 #include "packets.pb.h"
 
 #include "callstack_instr/callstack_instr.h"
-// For callstack_add_function
+// For callstack_add_function, get_current_callstack
 #include "callstack_instr/callstack_instr_ext.h"
 
 
@@ -149,18 +149,6 @@ bool emit_char_hook(CPUState *cpu, TranslationBlock *tb)
     return 0;
 }
 
-// Not currently used - emit_char_hook is used so we can get formatted output
-bool print_hook(CPUState *cpu, TranslationBlock *tb)
-{
-    uint8_t buf[1024];
-
-    panda_virtual_memory_read(cpu, ARG0_REG, buf, sizeof(buf));
-
-    printf("%s", buf);
-    
-    return 0;
-}
-
 bool poweroff_hook(CPUState *cpu, TranslationBlock *tb)
 {
     INFO("Kernel exiting, stopping qemu early");
@@ -246,40 +234,18 @@ size_t depth;
  * PANDA callback functions
  */
 
-packets::CallTree *get_current_callstack()
+void add_call(CPUState *env, target_ulong called_func, target_ulong ret_addr, target_ulong stackid)
 {
-    CallGraph *cur_graph = current_branch;
-    packets::CallTree *calltree = new packets::CallTree();
-
-    while (cur_graph->parent != nullptr) {
-        calltree->set_address(cur_graph->address);
-
-        packets::CallTree *parent_node = new packets::CallTree();
-        parent_node->mutable_called()->AddAllocated(calltree);
-
-        calltree = parent_node;
-        cur_graph = cur_graph->parent;
-    }
-
-    calltree->set_address(cur_graph->address);
-
-    return calltree;
+    CallGraph *new_branch = new CallGraph();
+    new_branch->address = called_func;
+    new_branch->parent = current_branch;
+    new_branch->parent_ret = ret_addr;
+    current_branch->subcalls.push_back(new_branch);
+    current_branch = new_branch;
+    depth++;
 }
 
-void add_call(CPUState *env, target_ulong called_func, target_ulong ret_addr)
-{
-	if (kernel_functions.find(called_func) != kernel_functions.end()) {
-		CallGraph *new_branch = new CallGraph();
-		new_branch->address = called_func;
-		new_branch->parent = current_branch;
-        new_branch->parent_ret = ret_addr;
-		current_branch->subcalls.push_back(new_branch);
-		current_branch = new_branch;
-		depth++;
-	}
-}
-
-void return_from_call(CPUState *env, target_ulong func, target_ulong ret_addr)
+void return_from_call(CPUState *env, target_ulong func, target_ulong ret_addr, target_ulong stackid)
 {
     /*
      * callstack_instr doesn't really look for RET instructions, but
@@ -288,23 +254,24 @@ void return_from_call(CPUState *env, target_ulong func, target_ulong ret_addr)
      * back up the call tree in one call to this callback
      */
 
-    // If this is the RET from a kernel function we would have added
-    // a branch because of
-    if (kernel_functions.find(func) != kernel_functions.end()) {
-        // Walk until we find the branch where addr is what we're returning from
-        // In 99% of cases this loop won't ever iterate because current_branch->addr
-        // is likely already `func`
-        while (current_branch->parent_ret != ret_addr && current_branch->parent != nullptr) {
-            depth--;
-            current_branch = current_branch->parent;
-        }
+    if (ret_addr == 0x803d50fc) {
+        printf("Return thing at depth %lu\n", depth);
+    }
 
-        if (current_branch->parent == nullptr) {
-            WARN("Couldn't find CALL corresponding to ret (from func " TARGET_FMT_lx ")!", func);
-        } else {
-            depth--;
-            current_branch = current_branch->parent;
-        }
+    while (current_branch->parent_ret != ret_addr && current_branch->parent != nullptr) {
+        depth--;
+        current_branch = current_branch->parent;
+    }
+    
+    if (ret_addr == 0x803d50fc) {
+        printf("Return thing at depth %lu\n", depth);
+    }
+
+    if (current_branch->parent == nullptr) {
+        WARN("Couldn't find CALL corresponding to ret (from func at 0x" TARGET_FMT_lx ")!", func);
+    } else {
+        depth--;
+        current_branch = current_branch->parent;
     }
 }
 
@@ -366,7 +333,11 @@ int check_unassigned_mem_r(CPUState *cpu, target_ulong pc, target_ulong addr,
         packets::MemoryAccess new_access;
         new_access.set_address(addr);
         new_access.set_type(packets::MemoryAccess::READ);
-        new_access.set_allocated_callstack(get_current_callstack());
+        Panda__CallStack *callstack = get_current_function_stack();
+        for (int i = 0; i < callstack->n_addr; i++) {
+            new_access.add_callstack(callstack->addr[i]);
+        }
+        pandalog_callstack_free(callstack);
         
         std::string response((char*)buf, size);
         new_access.set_value(response);
@@ -415,7 +386,11 @@ int check_unassigned_mem_w(CPUState *cpu, target_ulong pc, target_ulong addr,
         packets::MemoryAccess new_access;
         new_access.set_address(addr);
         new_access.set_type(packets::MemoryAccess::WRITE);
-        new_access.set_allocated_callstack(get_current_callstack());
+        Panda__CallStack *callstack = get_current_function_stack();
+        for (int i = 0; i < callstack->n_addr; i++) {
+            new_access.add_callstack(callstack->addr[i]);
+        }
+        pandalog_callstack_free(callstack);
         
         std::string val((char*)buf, size);
         new_access.set_value(val);
@@ -629,11 +604,6 @@ bool init_plugin(void *self)
 void dump_calltree(packets::CallTree *pkt_call_tree, CallGraph *branch, size_t depth)
 {
     pkt_call_tree->set_address(branch->address);
-    // Protobuf decoding dies if we're too recursive, so limit ourselves. Anything
-    // beyond 50 is a bug anyways.
-    if (depth > 50) {
-        return;
-    }
     for (auto subcall : branch->subcalls) {
         packets::CallTree *new_pkt_tree = pkt_call_tree->add_called();
         dump_calltree(new_pkt_tree, subcall, depth+1);
