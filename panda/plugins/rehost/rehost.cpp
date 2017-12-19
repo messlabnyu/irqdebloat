@@ -25,15 +25,19 @@ PANDAENDCOMMENT */
 #include "packets.pb.h"
 
 #include "callstack_instr/callstack_instr.h"
+// For callstack_add_function, get_current_callstack
 #include "callstack_instr/callstack_instr_ext.h"
+
 
 extern "C" {
 
 bool init_plugin(void *);
 void uninit_plugin(void *);
 
-}
+// Declaration from sysemu/sysemu.h
+void qemu_system_shutdown_request();
 
+}
 
 // Connection stuff
 int master_sockfd;
@@ -115,10 +119,6 @@ int send_pkt(packets::PacketType type, const std::string &pkt)
     return 0;
 }
 
-// State tracking
-packets::MemoryAccess::DeviceType last_device = packets::MemoryAccess::UNKNOWN;
-clock_t last_device_time = 0;
-
 // Log from hooking printk & co.
 std::string guest_log;
 
@@ -127,18 +127,21 @@ std::string guest_log;
  * Guest function hooks
  */
 
-bool set_last_device(packets::MemoryAccess::DeviceType type)
-{
-    last_device = type;
-    last_device_time = clock();
+// set ARG0_REG to the register value which contains the first argument to a
+// function based on the standard calling convention for that arch
+#if defined(TARGET_ARM)
+#define ARG0_REG (((CPUArchState*)cpu->env_ptr)->regs[0])
 
-    return 0;
-}
+#elif defined(TARGET_MIPS)
+#define ARG0_REG (((CPUArchState*)cpu->env_ptr)->regs[4])
+
+#else
+#define ARG0_REG (0)
+#endif
 
 bool emit_char_hook(CPUState *cpu, TranslationBlock *tb)
 {
-    CPUArchState *env = (CPUArchState*)cpu->env_ptr;
-    char chr = (char)env->regs[0]; // TODO: Architecture neutral
+    char chr = (char)ARG0_REG;
 
     guest_log += chr;
     printf("%c", (char)chr);
@@ -146,24 +149,10 @@ bool emit_char_hook(CPUState *cpu, TranslationBlock *tb)
     return 0;
 }
 
-// Not used
-bool print_hook(CPUState *cpu, TranslationBlock *tb)
-{
-    uint8_t buf[1024];
-    CPUArchState *env = (CPUArchState*)cpu->env_ptr;
-    target_ulong str_ptr = env->regs[0]; // TODO: Architecture neutral
-
-    panda_virtual_memory_read(cpu, str_ptr, buf, sizeof(buf));
-
-    printf("%s", buf);
-    
-    return 0;
-}
-
 bool poweroff_hook(CPUState *cpu, TranslationBlock *tb)
 {
-    INFO("Guest called poweroff");
-    // TODO: Force QEMU shutdown
+    INFO("Kernel exiting, stopping qemu early");
+    qemu_system_shutdown_request();
     
     return 0;
 }
@@ -177,12 +166,27 @@ bool poweroff_hook(CPUState *cpu, TranslationBlock *tb)
  */
 std::unordered_set<target_ulong> patched_funcs;
 
-// mov r0, #0; bx lr
-// TODO: architecture-independent
-uint8_t patch_asm[] = {0x00, 0x00, 0xa0, 0xe3, 0x1e, 0xff, 0x2f, 0xe1};
+#if defined(TARGET_ARM)
+    // mov r0, #0; bx lr
+    uint8_t patch_asm[] = {0x00, 0x00, 0xa0, 0xe3, 0x1e, 0xff, 0x2f, 0xe1};
+
+#elif defined(TARGET_MIPS)
+#ifdef TARGET_WORDS_BIGENDIAN
+    // big e
+    // move $v0, $0; jr $ra
+    uint8_t patch_asm[] = {0x20, 0x02, 0x00, 0x00, 0x03, 0xe0, 0x00, 0x08};
+#else
+    // little e
+    uint8_t patch_asm[] = {0x00, 0x00, 0x02, 0x20, 0x08, 0x00, 0xe0, 0x03};
+#endif
+
+#else
+    uint8_t patch_asm[] = {};
+#endif
 
 bool skip_func(CPUState *cpu, TranslationBlock *tb)
 {
+
     target_ulong addr = tb->pc;
 
     if (patched_funcs.find(tb->pc) == patched_funcs.end()) {
@@ -194,7 +198,6 @@ bool skip_func(CPUState *cpu, TranslationBlock *tb)
         return false; // TB already modified on a prior run so no need to invalidate
     }
 }
-
 
 /*
  * Plugin-wide maps
@@ -215,36 +218,15 @@ std::unordered_set<target_ulong> kernel_functions;
 std::map<std::string, hook_func_t> readable_hooks = {
     {"emit_log_char", emit_char_hook},
     {"printascii", skip_func}, // Appears this expects the UART to fully work so let's get rid of it for now
-    {"init_IRQ", [](CPUState *cpu, TranslationBlock *tb)
-        {
-            return set_last_device(packets::MemoryAccess::INTERRUPT_CONTROLLER_DIST);
-        }
-    },
-    {"gic_cpu_init", [](CPUState *cpu, TranslationBlock *tb)
-        {
-            return set_last_device(packets::MemoryAccess::INTERRUPT_CONTROLLER_CPU);
-        }
-    },
-    {"uart_register_driver", [](CPUState *cpu, TranslationBlock *tb)
-        {
-            return set_last_device(packets::MemoryAccess::UART);
-        }
-    },
-    {"*timer_init", [](CPUState *cpu, TranslationBlock *tb)
-        {
-            return set_last_device(packets::MemoryAccess::TIMER);
-        }
-    },
-    {"die", poweroff_hook},
-    {"machine_restart", poweroff_hook},
+    {"panic", poweroff_hook},
 };
 
 // addr->queue: ordered list of all previously encountered memory accesses
 // so we know how to respond and/or if we've diverged
 std::unordered_map<target_ulong, std::deque<packets::MemoryAccess>> known_mem_accesses;
 
-CallTree call_tree;
-CallTree *current_branch = &call_tree;
+CallGraph call_tree;
+CallGraph *current_branch = &call_tree;
 size_t depth;
 
 
@@ -252,19 +234,18 @@ size_t depth;
  * PANDA callback functions
  */
 
-void add_call(CPUState *env, target_ulong func)
+void add_call(CPUState *env, target_ulong called_func, target_ulong ret_addr, target_ulong stackid)
 {
-	if (kernel_functions.find(func) != kernel_functions.end()) {
-		CallTree *new_branch = new CallTree();
-		new_branch->address = func;
-		new_branch->parent = current_branch;
-		current_branch->subcalls.push_back(new_branch);
-		current_branch = new_branch;
-		depth++;
-	}
+    CallGraph *new_branch = new CallGraph();
+    new_branch->address = called_func;
+    new_branch->parent = current_branch;
+    new_branch->parent_ret = ret_addr;
+    current_branch->subcalls.push_back(new_branch);
+    current_branch = new_branch;
+    depth++;
 }
 
-void return_from_call(CPUState *env, target_ulong func)
+void return_from_call(CPUState *env, target_ulong func, target_ulong ret_addr, target_ulong stackid)
 {
     /*
      * callstack_instr doesn't really look for RET instructions, but
@@ -273,23 +254,24 @@ void return_from_call(CPUState *env, target_ulong func)
      * back up the call tree in one call to this callback
      */
 
-    // If this is the RET from a kernel function we would have added
-    // a branch because of
-    if (kernel_functions.find(func) != kernel_functions.end()) {
-        // Walk until we find the branch where addr is what we're returning from
-        // In 99% of cases this loop won't ever iterate because current_branch->addr
-        // is likely already `func`
-        while (current_branch->address != func && current_branch->parent != NULL) {
-            depth--;
-            current_branch = current_branch->parent;
-        }
+    if (ret_addr == 0x803d50fc) {
+        printf("Return thing at depth %lu\n", depth);
+    }
 
-        if (current_branch->parent == NULL) {
-            WARN("Couldn't find CALL corresponding to ret (from func " TARGET_FMT_lx ")!", func);
-        } else {
-            depth--;
-            current_branch = current_branch->parent;
-        }
+    while (current_branch->parent_ret != ret_addr && current_branch->parent != nullptr) {
+        depth--;
+        current_branch = current_branch->parent;
+    }
+    
+    if (ret_addr == 0x803d50fc) {
+        printf("Return thing at depth %lu\n", depth);
+    }
+
+    if (current_branch->parent == nullptr) {
+        WARN("Couldn't find CALL corresponding to ret (from func at 0x" TARGET_FMT_lx ")!", func);
+    } else {
+        depth--;
+        current_branch = current_branch->parent;
     }
 }
 
@@ -331,13 +313,13 @@ int check_unassigned_mem_r(CPUState *cpu, target_ulong pc, target_ulong addr,
         known_mem_accesses[addr].pop_front();
         
         if (old_access.type() != packets::MemoryAccess::READ) {
-            WARN("Desync! Memory read at " TARGET_FMT_lx " but next expected access is write", addr);
+            WARN("Desync! Memory read at 0x" TARGET_FMT_lx " but next expected access is write", addr);
             return 0;
         }
 
         uint64_t old_size = old_access.value().length();
         if (old_size != size) {
-            WARN("Desync! Memory read at " TARGET_FMT_lx " was size %lu before, now is " TARGET_FMT_lx, addr, old_size, size);
+            WARN("Desync! Memory read at 0x" TARGET_FMT_lx " was size %lu before, now is " TARGET_FMT_lx, addr, old_size, size);
             return 0;
         }
 
@@ -351,7 +333,11 @@ int check_unassigned_mem_r(CPUState *cpu, target_ulong pc, target_ulong addr,
         packets::MemoryAccess new_access;
         new_access.set_address(addr);
         new_access.set_type(packets::MemoryAccess::READ);
-        new_access.set_device(last_device);
+        Panda__CallStack *callstack = get_current_function_stack();
+        for (int i = 0; i < callstack->n_addr; i++) {
+            new_access.add_callstack(callstack->addr[i]);
+        }
+        pandalog_callstack_free(callstack);
         
         std::string response((char*)buf, size);
         new_access.set_value(response);
@@ -362,8 +348,6 @@ int check_unassigned_mem_r(CPUState *cpu, target_ulong pc, target_ulong addr,
         if (send_pkt(packets::PacketType::NEW_MEMORY_ACCESS, pkt)) {
             ERROR("Failed to send memory access notification");
         }
-        
-        last_device = packets::MemoryAccess::UNKNOWN;
     }
     
     return 0;
@@ -385,13 +369,13 @@ int check_unassigned_mem_w(CPUState *cpu, target_ulong pc, target_ulong addr,
         known_mem_accesses[addr].pop_front();
         
         if (old_access.type() != packets::MemoryAccess::WRITE) {
-            WARN("Desync! Memory write at " TARGET_FMT_lx " but next expected access is read", addr);
+            WARN("Desync! Memory write at 0x" TARGET_FMT_lx " but next expected access is read", addr);
             return 0;
         }
 
         uint64_t old_size = old_access.value().length();
         if (old_size != size) {
-            WARN("Desync! Memory write at " TARGET_FMT_lx " was size %lu before, now is " TARGET_FMT_lx, addr, old_size, size);
+            WARN("Desync! Memory write at 0x" TARGET_FMT_lx " was size %lu before, now is " TARGET_FMT_lx, addr, old_size, size);
             return 0;
         }
 
@@ -402,7 +386,11 @@ int check_unassigned_mem_w(CPUState *cpu, target_ulong pc, target_ulong addr,
         packets::MemoryAccess new_access;
         new_access.set_address(addr);
         new_access.set_type(packets::MemoryAccess::WRITE);
-        new_access.set_device(last_device);
+        Panda__CallStack *callstack = get_current_function_stack();
+        for (int i = 0; i < callstack->n_addr; i++) {
+            new_access.add_callstack(callstack->addr[i]);
+        }
+        pandalog_callstack_free(callstack);
         
         std::string val((char*)buf, size);
         new_access.set_value(val);
@@ -413,8 +401,6 @@ int check_unassigned_mem_w(CPUState *cpu, target_ulong pc, target_ulong addr,
         if (send_pkt(packets::PacketType::NEW_MEMORY_ACCESS, pkt)) {
             ERROR("Failed to send memory access notification");
         }
-        
-        last_device = packets::MemoryAccess::UNKNOWN;
     }
     
     return 0;
@@ -444,6 +430,8 @@ int recv_symtab()
     for (packets::SymbolTable::Symbol sym : parsed_symtab.symbols()) {
         kallsyms[sym.name()] = sym.address();
         kernel_functions.insert(sym.address());
+        
+        callstack_add_function(sym.address());
     }
 
     // Transform the readable_hooks into their address equivalents
@@ -613,34 +601,27 @@ bool init_plugin(void *self)
     return true;
 }
 
-void dump_calltree(packets::CallTree *pkt_call_tree)
+void dump_calltree(packets::CallTree *pkt_call_tree, CallGraph *branch, size_t depth)
 {
-    pkt_call_tree->set_address(current_branch->address);
-    for (auto subcall : current_branch->subcalls) {
-        current_branch = subcall;
+    pkt_call_tree->set_address(branch->address);
+    for (auto subcall : branch->subcalls) {
         packets::CallTree *new_pkt_tree = pkt_call_tree->add_called();
-        dump_calltree(new_pkt_tree);
-        current_branch = current_branch->parent;
-
+        dump_calltree(new_pkt_tree, subcall, depth+1);
     }
 }
 
 void uninit_plugin(void *self)
 {
     INFO("Unloading plugin");
+    INFO("We stopped emulation %lu calls deep", depth);
+
     packets::CallTree pkt_call_tree;
-    unsigned i = 0;
-    while (current_branch->parent != NULL) {
-        i++;
-        current_branch = current_branch->parent;
-    }
-
-    INFO("We stopped emulation %u calls deep", i);
-
-    dump_calltree(&pkt_call_tree);
+    dump_calltree(&pkt_call_tree, &call_tree, 0);
 
     std::string pkt;
     pkt_call_tree.SerializeToString(&pkt);
+
+    DEBUG("Sending call tree");
     
     if (send_pkt(packets::PacketType::CALL_TRACE, pkt)) {
         ERROR("Failed to send final call trace");
@@ -651,9 +632,11 @@ void uninit_plugin(void *self)
 
     log.SerializeToString(&pkt);
 
+    DEBUG("Sending serial log");
+
     if (send_pkt(packets::PacketType::GUEST_LOG, pkt)) {
         ERROR("Failed to send final guest log");
     }
-    
+
     INFO("Unloaded");
 }

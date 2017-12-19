@@ -29,15 +29,7 @@ message MemoryAccess {
     }
     required AccessType type = 2;
 
-    enum DeviceType {
-        UNKNOWN = 0;
-        UART = 1;
-        TIMER = 2;
-        INTERRUPT_CONTROLLER_DIST = 3;
-        INTERRUPT_CONTROLLER_CPU = 4;
-        NAND_CONTROLLER = 5;
-    }
-    optional DeviceType device = 3;
+    repeated uint64 callstack = 3;
 
     optional bytes value = 4;  // Stored as a string (bytes) so we can handle arbitrary length R/Ws
 }

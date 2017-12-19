@@ -18,6 +18,7 @@ PANDAENDCOMMENT */
 
 #include <unordered_map>
 #include <set>
+#include <unordered_set>
 #include <vector>
 #include <algorithm>
 
@@ -71,6 +72,7 @@ enum instr_type {
 
 struct stack_entry {
     target_ulong pc;
+    target_ulong sp;
     instr_type kind;
 };
 
@@ -100,6 +102,10 @@ std::unordered_map<stackid, std::vector<target_ulong>> function_stacks;
 // EIP -> instr_type
 std::unordered_map<target_ulong, instr_type> call_cache;
 int last_ret_size = 0;
+
+// List of known functions that we always mark a call when we see run
+std::unordered_set<target_ulong> known_functions;
+
 
 static inline bool in_kernelspace(CPUArchState* env) {
 #if defined(TARGET_I386)
@@ -168,52 +174,35 @@ static stackid get_stackid(CPUArchState* env) {
         }
     }
 #else
-    if (in_kernelspace(env))
-        return 0;
-    else
+    if (in_kernelspace(env)) {
+        // Linux hack for kthreads: keep track of sp & ~2*PAGE_SIZE, since a
+        // large (i.e. >2pg) change in SP means there's a different kthread running
+        return panda_current_sp(ENV_GET_CPU(env)) & ~0x2000;
+    } else {
         return panda_current_asid(ENV_GET_CPU(env));
+    }
 #endif
 }
 
-/*
- * We need to special case ARM stuff because ARM is special.
- * ngregory - 11 Apr 2017
- */
-bool is_arm_call(csh handle, cs_insn *insn, target_ulong pc, int size) {
-    // Call must be a branch with link *...
-    if (insn->id != ARM_INS_BL && insn->id != ARM_INS_BLX) {
-        return false;
+bool is_arm_call(csh handle, cs_insn *insn) {
+    // Must be a jump of some kind
+	if (!cs_insn_group(handle, insn, CS_GRP_JUMP)) {
+		return false;
+	}
+
+    // Either needs to jump to a known function, or be a BL*
+    if (insn->id == ARM_INS_BL || insn->id == ARM_INS_BLX) {
+        return true;
     }
 
-    // and point to something outside this TB
     cs_arm details = insn->detail->arm;
 
-    if (details.operands[0].type == ARM_OP_IMM &&
-            details.operands[0].imm >= pc &&
-            details.operands[0].imm < pc + size) {
-        return false;
+    if (details.operands[0].type == ARM_OP_IMM && 
+            known_functions.find(details.operands[0].imm) != known_functions.end()) {
+        return true;
     }
 
-    return true;
-}
-
-bool is_arm_ret(csh handle, cs_insn *insn, target_long pc, int size) {
-    // TODO: AArch64 (incl. the "RET" instruction)
-    // Ret must be a jump (could be B, BX, etc.)...
-    if (!cs_insn_group(handle, insn, CS_GRP_JUMP)) {
-        return false;
-    }
-
-    // ... whose first operand is the link register
-    cs_arm details = insn->detail->arm;
-
-    if (details.operands[0].type != ARM_OP_REG ||
-        details.operands[0].reg != ARM_REG_LR) {
-        return false;
-    }
-
-    return true;
-
+    return false;
 }
 
 instr_type disas_block(CPUArchState* env, target_ulong pc, int size) {
@@ -249,11 +238,11 @@ instr_type disas_block(CPUArchState* env, target_ulong pc, int size) {
         res = INSTR_UNKNOWN;
     }
 #elif defined(TARGET_ARM)
-    if (is_arm_call(handle, end, pc, size)) {
+    if (is_arm_call(handle, end)) {
         res = INSTR_CALL;
-    } else if (is_arm_ret(handle, end, pc, size)) {
-        res = INSTR_RET;
-    } else {
+    }
+    // ngregory 30 Nov. 2017: INSTR_RET doesn't do anything
+    else {
         res = INSTR_UNKNOWN;
     }
 #endif
@@ -278,13 +267,15 @@ int before_block_exec(CPUState *cpu, TranslationBlock *tb) {
     std::vector<target_ulong> &w = function_stacks[get_stackid(env)];
     if (v.empty()) return 1;
 
-    // Search up to 50 down
-    for (int i = v.size()-1; i >= 0; i--) {
-        if (tb->pc == v[i].pc) {
-            //printf("Matched at depth %d\n", v.size()-i);
-            //v.erase(v.begin()+i, v.end());
+    target_ulong cur_sp = panda_current_sp(cpu);
 
-            PPP_RUN_CB(on_ret, cpu, w[i]);
+    if (tb->pc == 0x803d50fc) {
+        printf("Return to cpu_up\n");
+    }
+    for (int i = v.size()-1; i >= 0; i--) {
+        if (tb->pc == v[i].pc && cur_sp == v[i].sp) {
+            printf("Return to 0x" TARGET_FMT_lx " has SP 0x" TARGET_FMT_lx " at depth %d\n", tb->pc, cur_sp, i);
+            PPP_RUN_CB(on_ret, cpu, w[i], tb->pc, get_stackid(env));
             v.erase(v.begin()+i, v.end());
             w.erase(w.begin()+i, w.end());
 
@@ -300,17 +291,16 @@ int after_block_exec(CPUState* cpu, TranslationBlock *tb) {
     instr_type tb_type = call_cache[tb->pc];
 
     if (tb_type == INSTR_CALL) {
-        stack_entry se = {tb->pc+tb->size,tb_type};
+        target_ulong pc = panda_current_pc(cpu);
+        target_ulong sp = panda_current_sp(cpu);
+
+        stack_entry se = {tb->pc+tb->size, sp, tb_type};
         callstacks[get_stackid(env)].push_back(se);
 
-        // Also track the function that gets called
-        target_ulong pc, cs_base;
-        uint32_t flags;
-        // This retrieves the pc in an architecture-neutral way
-        cpu_get_tb_cpu_state(env, &pc, &cs_base, &flags);
         function_stacks[get_stackid(env)].push_back(pc);
+        PPP_RUN_CB(on_call, cpu, pc, tb->pc + tb->size, get_stackid(env));
 
-        PPP_RUN_CB(on_call, cpu, pc);
+        printf("Return to 0x" TARGET_FMT_lx " will have SP 0x" TARGET_FMT_lx " at depth %lu\n", tb->pc + tb->size, sp, callstacks[get_stackid(env)].size());
     }
     else if (tb_type == INSTR_RET) {
         //printf("Just executed a RET in TB " TARGET_FMT_lx "\n", tb->pc);
@@ -364,6 +354,7 @@ void pandalog_callstack_free(Panda__CallStack *cs) {
 }
 
 
+
 int get_functions(target_ulong functions[], int n, CPUState* cpu) {
     CPUArchState* env = (CPUArchState*)cpu->env_ptr;
     std::vector<target_ulong> &v = function_stacks[get_stackid(env)];
@@ -408,7 +399,29 @@ void get_prog_point(CPUState* cpu, prog_point *p) {
     p->pc = cpu->panda_guest_pc;
 }
 
+void callstack_add_function(target_ulong addr) {
+    known_functions.insert(addr);
+}
 
+Panda__CallStack *get_current_function_stack() {
+    CPUState *cpu = first_cpu;
+    CPUArchState* env = (CPUArchState*)cpu->env_ptr;
+
+    std::vector<target_ulong> &v = function_stacks[get_stackid(env)];
+
+    Panda__CallStack *cs = (Panda__CallStack *) malloc (sizeof(Panda__CallStack));
+    *cs = PANDA__CALL_STACK__INIT;
+    cs->n_addr = v.size();
+    cs->addr = (uint64_t*) malloc(sizeof(uint64_t) * cs->n_addr);
+
+    uint32_t i = 0;
+    for (auto func : v) {
+        cs->addr[i] = func;
+        i++;
+    }
+
+    return cs;
+}
 
 bool init_plugin(void *self) {
 #if defined(TARGET_I386)
