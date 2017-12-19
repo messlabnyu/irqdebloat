@@ -218,6 +218,8 @@ static void mach_rehosting_init(MachineState *machine)
         object_property_set_bool(cpuobj, true, "realized", NULL);
     }
 
+    machine->ram_size = vbi->memmap[MEM].size;
+    ram_size = vbi->memmap[MEM].size;
     memory_region_allocate_system_memory(ram, NULL, "ram",
                                          machine->ram_size);
     memory_region_add_subregion(sysmem, vbi->memmap[MEM].base, ram);
