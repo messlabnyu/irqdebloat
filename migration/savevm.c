@@ -749,6 +749,35 @@ static void vmstate_save(QEMUFile *f, SaveStateEntry *se, QJSON *vmdesc)
     vmstate_save_state(f, se->vmsd, se->opaque, vmdesc);
 }
 
+void save_cpustate(const char *path);
+void load_cpustate(const char *path);
+
+void save_cpustate(const char *path) {
+    SaveStateEntry *se;
+    QIOChannelFile* ioc =
+        qio_channel_file_new_path(path, O_WRONLY | O_CREAT, 0660, NULL);
+    QEMUFile* f = qemu_fopen_channel_output(QIO_CHANNEL(ioc));
+    // Find the CPU
+    QTAILQ_FOREACH(se, &savevm_state.handlers, entry) {
+        if (0 == strcmp(se->idstr, "cpu")) break;
+    }
+    vmstate_save_state(f, se->vmsd, se->opaque, NULL);
+    qemu_fclose(f);
+}
+
+void load_cpustate(const char *path) {
+    SaveStateEntry *se;
+    QIOChannelFile* ioc =
+        qio_channel_file_new_path(path, O_RDONLY, 0, NULL);
+    QEMUFile* f = qemu_fopen_channel_input(QIO_CHANNEL(ioc));
+    // Find the CPU
+    QTAILQ_FOREACH(se, &savevm_state.handlers, entry) {
+        if (0 == strcmp(se->idstr, "cpu")) break;
+    }
+    vmstate_load_state(f, se->vmsd, se->opaque, 22);
+    qemu_fclose(f);
+}
+
 void savevm_skip_section_footers(void)
 {
     skip_section_footers = true;
