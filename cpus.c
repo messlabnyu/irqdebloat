@@ -957,7 +957,8 @@ static void qemu_tcg_wait_io_event(CPUState *cpu)
         qemu_cond_wait(cpu->halt_cond, &qemu_global_mutex);
     }
 
-    while (iothread_requesting_mutex) {
+    // YOLO #2
+    while (0 && iothread_requesting_mutex) {
         qemu_cond_wait(&qemu_io_proceeded_cond, &qemu_global_mutex);
     }
 

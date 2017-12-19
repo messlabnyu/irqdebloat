@@ -321,21 +321,23 @@ static void rcu_init_complete(void)
 #ifdef CONFIG_POSIX
 static void rcu_init_lock(void)
 {
-    qemu_mutex_lock(&rcu_sync_lock);
-    qemu_mutex_lock(&rcu_registry_lock);
+    // YOLO
+    //qemu_mutex_lock(&rcu_sync_lock);
+    //qemu_mutex_lock(&rcu_registry_lock);
 }
 
 static void rcu_init_unlock(void)
 {
-    qemu_mutex_unlock(&rcu_registry_lock);
-    qemu_mutex_unlock(&rcu_sync_lock);
+    // YOLO
+    //qemu_mutex_unlock(&rcu_registry_lock);
+    //qemu_mutex_unlock(&rcu_sync_lock);
 }
 #endif
 
 void rcu_after_fork(void)
 {
     memset(&registry, 0, sizeof(registry));
-    rcu_init_complete();
+    //rcu_init_complete();
 }
 
 static void __attribute__((__constructor__)) rcu_init(void)
