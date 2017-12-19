@@ -47,7 +47,6 @@ typedef enum panda_cb_type {
     PANDA_CB_PHYS_MEM_AFTER_READ,
     PANDA_CB_PHYS_MEM_AFTER_WRITE,
 
-
     PANDA_CB_HD_READ,           // Each HDD read
     PANDA_CB_HD_WRITE,          // Each HDD write
     PANDA_CB_GUEST_HYPERCALL,   // Hypercall from the guest (e.g. CPUID)
@@ -69,6 +68,11 @@ typedef enum panda_cb_type {
     PANDA_CB_REPLAY_BEFORE_DMA,      // in replay, just before RAM case of cpu_physical_mem_rw
     PANDA_CB_REPLAY_AFTER_DMA,       // in replay, just after RAM case of cpu_physical_mem_rw
     PANDA_CB_REPLAY_HANDLE_PACKET,   // in replay, packet in / out
+
+    // Unassigned I/O
+    PANDA_CB_UNASSIGNED_IO_READ,
+    PANDA_CB_UNASSIGNED_IO_WRITE,
+
     PANDA_CB_LAST
 } panda_cb_type;
 
@@ -615,6 +619,9 @@ typedef union panda_cb {
         unused
  */
   int (*replay_net_transfer)(CPUState *env, uint32_t type, uint64_t src_addr, uint64_t dest_addr, uint32_t num_bytes);
+
+  void (*unassigned_io_read)(CPUState *env, target_ulong pc, hwaddr addr, uint32_t size, uint64_t *val);
+  void (*unassigned_io_write)(CPUState *env, target_ulong pc, hwaddr addr, uint32_t size, uint64_t *val);
 
 } panda_cb;
 
