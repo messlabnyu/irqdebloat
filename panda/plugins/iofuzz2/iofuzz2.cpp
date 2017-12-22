@@ -34,7 +34,7 @@ void qemu_system_shutdown_request(void);
 #include <deque>
 #include <map>
 
-#define MAX_GENERATIONS 10
+#define MAX_GENERATIONS 2
 
 typedef std::pair<target_ulong,target_ulong> edge_t;
 
@@ -166,7 +166,9 @@ static bool update_coverage(int fd, std::vector<unsigned long> &ioseq) {
     }
     dbgprintf("Run produced %zu ioaddrs and %zu edges\n",
             local_ioaddrs.size(), local_cov.size());
-    auto res = coverage.insert(std::make_pair(local_ioaddrs, local_cov));
+    //auto res = coverage.insert(std::make_pair(local_ioaddrs, local_cov));
+    // temp: only count I/O addresses as new coverage
+    auto res = coverage.insert(std::make_pair(local_ioaddrs, std::set<edge_t>()));
     if (res.second) {
 #ifdef DEBUG
         dbgprintf("Woo, we received new coverage!\n");
@@ -479,7 +481,7 @@ static int before_virt_read(CPUState *cpu, target_ulong pc, target_ulong addr,
 #endif
 
 static void iowrite(CPUState *env, target_ulong pc, hwaddr addr, uint32_t size, uint64_t *val) {
-    //dbgprintf("IOMEM_WRITE %u %lx %" PRIx64 "\n", size, addr, *val);
+    ioaddrs.insert(addr);
 }
 
 static void ioread(CPUState *env, target_ulong pc, hwaddr addr, uint32_t size, uint64_t *val) {

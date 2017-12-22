@@ -16,5 +16,9 @@ win7x86intro
 wintrospection
 asid_instr_count
 replaymovie
-rehost
+#rehost
 memsavep
+bbtrace
+loadcpu
+iofuzz
+iofuzz2
