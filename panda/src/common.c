@@ -6,6 +6,7 @@
 #include "panda/plugin.h"
 #include "panda/common.h"
 #include "panda/plog.h"
+#include "panda/plog-cc-bridge.h"
 
 target_ulong panda_current_pc(CPUState *cpu) {
     target_ulong pc, cs_base;
@@ -30,6 +31,7 @@ static inline uint32_t regime_el(CPUARMState *env, ARMMMUIdx mmu_idx)
     case ARMMMUIdx_S1SE1:
     case ARMMMUIdx_S1NSE0:
     case ARMMMUIdx_S1NSE1:
+    case ARMMMUIdx_S12NSE1:
         return 1;
     default:
         return mmu_idx & 3;
@@ -288,7 +290,7 @@ void panda_cleanup(void) {
     // PANDA: unload plugins
     panda_unload_plugins();
     if (pandalog) {
-        pandalog_close();
+        pandalog_cc_close();
     }
 }
 

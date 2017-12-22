@@ -1,5 +1,6 @@
 asidstory
 callstack_instr
+checkpoint_test
 libfi
 loaded
 osi
@@ -16,3 +17,4 @@ wintrospection
 asid_instr_count
 replaymovie
 rehost
+memsavep

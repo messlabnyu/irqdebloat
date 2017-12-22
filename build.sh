@@ -41,8 +41,10 @@ fi
 
 
 "$(dirname $0)/configure" \
-    --target-list=x86_64-softmmu,i386-softmmu,arm-softmmu \
+    --disable-vhost-net \
+    --target-list=x86_64-softmmu,i386-softmmu,arm-softmmu,ppc-softmmu \
     --prefix="$(pwd)/install" \
+    --python=python2 \
     $LLVM_BIT \
     "$@"
 

@@ -220,7 +220,7 @@ void taint_mix(
 
 static const uint64_t ones = ~0UL;
 
-void taint_pointer_run(uint64_t src, uint64_t ptr, uint64_t dest, bool is_store);
+void taint_pointer_run(uint64_t src, uint64_t ptr, uint64_t dest, bool is_store, uint64_t size);
 
 // Model for tainted pointer is to mix all the labels from the pointer and then
 // union that mix with each byte of the actual copied data. So if the pointer
@@ -245,7 +245,7 @@ void taint_pointer(
 
     // query taint on pointer either being read or written
     if (tainted_pointer & TAINT_POINTER_MODE_CHECK) {
-        taint_pointer_run(src, ptr, dest, (bool) is_store);
+        taint_pointer_run(src, ptr, dest, (bool) is_store, size);
     }
 
     // this is [1234] in our example
@@ -307,9 +307,17 @@ void taint_select(
      (size_t)(offset) < cpu_endoff(member))
 
 static void find_offset(FastShad *greg, FastShad *gspec, uint64_t offset, uint64_t labels_per_reg, FastShad **dest, uint64_t *addr) {
+#ifdef TARGET_PPC
+    if (cpu_contains(gpr, offset)) {
+#else 
     if (cpu_contains(regs, offset)) {
+#endif
         *dest = greg;
+#ifdef TARGET_PPC
+        *addr = (offset - cpu_off(gpr)) * labels_per_reg / sizeof(((CPUArchState *)0)->gpr[0]);
+#else
         *addr = (offset - cpu_off(regs)) * labels_per_reg / sizeof(((CPUArchState *)0)->regs[0]);
+#endif
     } else {
         *dest= gspec;
         *addr= offset;
