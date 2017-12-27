@@ -30,6 +30,9 @@ void taint2_label_ram_additive(uint64_t pa, uint32_t l);
 // are not removed.
 void taint2_label_reg_additive(int reg_num, int offset, uint32_t l);
 
+// llvm_reg is a reg #.  l is offset within that reg
+void taint2_label_llvm(uint64_t llvm_reg, uint64_t off, uint32_t l);
+
 // query fns return 0 if untainted, else cardinality of taint set
 uint32_t taint2_query(Addr a);
 uint32_t taint2_query_ram(uint64_t pa);

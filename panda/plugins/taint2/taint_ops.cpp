@@ -31,11 +31,17 @@ PANDAENDCOMMENT */
 #include "label_set.h"
 #include "taint_ops.h"
 
+#include "taint2.h"
+
 uint64_t labelset_count;
 
 extern "C" {
 
 extern bool tainted_pointer;
+PPP_PROT_REG_CB(on_taint_after_load);
+PPP_PROT_REG_CB(on_taint_after_store);
+PPP_CB_BOILERPLATE(on_taint_after_load);
+PPP_CB_BOILERPLATE(on_taint_after_store);
 
 }
 
@@ -264,6 +270,31 @@ void taint_pointer(
         }
     }
 }
+
+// val = *ptr
+// where llvm_slot is val in taint terms
+void taint_load(
+    FastShad *shad_ram, uint64_t paddr, target_ulong vaddr,
+    FastShad *shad_llvm, uint64_t llvm_slot,
+    uint64_t size) {
+    taint_log("ld: %s[%lx+%lx] <- *(%s[v %lx p %lx])  \n", 
+              shad_llvm->name(), llvm_slot, size,
+              shad_ram->name(), (uint64_t) vaddr, paddr);
+    PPP_RUN_CB(on_taint_after_load, paddr, vaddr, llvm_slot/MAXREGSIZE, size);
+}
+
+
+// *ptr = val
+void taint_store(
+    FastShad *shad_ram, uint64_t paddr, target_ulong vaddr,
+    FastShad *shad_llvm, uint64_t llvm_slot,
+    uint64_t size) {
+    taint_log("st: %s[%lx+%lx] -> *(%s[v %lx p %lx])  \n", 
+              shad_llvm->name(), llvm_slot, size,
+              shad_ram->name(), (uint64_t) vaddr, paddr);
+    PPP_RUN_CB(on_taint_after_store, paddr, vaddr, llvm_slot, size);
+}
+
 
 void taint_sext(FastShad *shad, uint64_t dest, uint64_t dest_size, uint64_t src, uint64_t src_size) {
     taint_log("taint_sext\n");
@@ -634,9 +665,10 @@ static void update_cb(
             return;
     }
 
+    /*
     taint_log("update_cb: %s[%lx+%lx] CB %#lx -> 0x%#lx, 0 %#lx -> %#lx, 1 %#lx -> %#lx\n",
             shad_dest->name(), dest, size, orig_cb_mask, cb_mask,
             orig_zero_mask, zero_mask, orig_one_mask, one_mask);
-
+    */
     write_cb_masks(shad_dest, dest, size, cb_masks);
 }

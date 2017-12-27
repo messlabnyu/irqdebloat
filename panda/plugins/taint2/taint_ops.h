@@ -105,6 +105,17 @@ void taint_pointer(
         FastShad *shad_src, uint64_t src, uint64_t size,
         uint64_t is_store);
 
+void taint_load(
+    FastShad *shad_paddr, uint64_t paddr, target_ulong vaddr,
+    FastShad *shad_llvm, uint64_t llvm,
+    uint64_t size);
+
+// *ptr = val
+void taint_store(
+    FastShad *shad_paddr, uint64_t paddr, target_ulong vaddr,
+    FastShad *shad_llvm, uint64_t llvm,
+    uint64_t size);
+
 // Only generate when signed and dest_size > src_size.
 // Otherwise it should just be a copy.
 void taint_sext(

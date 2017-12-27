@@ -28,6 +28,20 @@ Addr make_greg(uint64_t r, uint16_t off) {
     return a;
 }
 
+// create an addr given a shad name and an offset within it.
+// uses magic knowledge and should be illegal. 
+Addr make_addr(std::string &&shad_name, uint64_t a) {
+    if ("LLVM"==shad_name) {
+        return make_laddr(a / MAXREGSIZE, a % MAXREGSIZE);
+    }
+    if ("RAM"==shad_name) {
+        return make_maddr(a);
+    }
+    // not ok
+    tassert(1==0);
+    abort();
+}
+
 extern bool debug_taint;
 target_ulong debug_asid = 0;
 
@@ -132,6 +146,11 @@ void taint2_label_ram(uint64_t pa, uint32_t l) {
 
 void taint2_label_reg(int reg_num, int offset, uint32_t l) {
     Addr a = make_greg(reg_num, offset);
+    tp_label(a, l);
+}
+
+void taint2_label_llvm(uint64_t llvm_reg, uint64_t off, uint32_t l) {
+    Addr a = make_laddr(llvm_reg, off);
     tp_label(a, l);
 }
 

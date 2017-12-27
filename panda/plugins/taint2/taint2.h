@@ -34,7 +34,8 @@ typedef void (*on_indirect_jump_t) (Addr, uint64_t);
 typedef void (*on_taint_change_t) (Addr, uint64_t);
 typedef void (*on_ptr_load_t) (Addr, uint64_t, uint64_t);
 typedef void (*on_ptr_store_t) (Addr, uint64_t, uint64_t);
-
+typedef void (*on_taint_after_load_t) (uint64_t paddr, target_ulong vaddr, uint64_t llvm_slot, uint64_t size);
+typedef void (*on_taint_after_store_t) (uint64_t paddr, target_ulong vaddr, uint64_t llvm_slot, uint64_t size);
 
 struct ShadowState {
     uint64_t prev_bb; // label for previous BB.

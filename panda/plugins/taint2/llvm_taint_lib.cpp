@@ -72,6 +72,11 @@ using namespace llvm;
 using std::vector;
 using std::pair;
 
+
+template<typename T>
+inline void ignore_result(T /* unused result */) {}
+
+
 /***
  *** PandaTaintFunctionPass
  ***/
@@ -159,6 +164,8 @@ bool PandaTaintFunctionPass::doInitialization(Module &M) {
     PTV.deleteF = M.getFunction("taint_delete"),
     PTV.mixF = M.getFunction("taint_mix"),
     PTV.pointerF = M.getFunction("taint_pointer"),
+    PTV.loadF = M.getFunction("taint_load"),
+    PTV.storeF = M.getFunction("taint_store"),
     PTV.mixCompF = M.getFunction("taint_mix_compute"),
     PTV.parallelCompF = M.getFunction("taint_parallel_compute"),
     PTV.copyF = M.getFunction("taint_copy");
@@ -225,6 +232,8 @@ bool PandaTaintFunctionPass::doInitialization(Module &M) {
     ADD_MAPPING(taint_delete);
     ADD_MAPPING(taint_mix);
     ADD_MAPPING(taint_pointer);
+    ADD_MAPPING(taint_load);
+    ADD_MAPPING(taint_store);    
     ADD_MAPPING(taint_mix_compute);
     ADD_MAPPING(taint_parallel_compute);
     ADD_MAPPING(taint_copy);
@@ -364,7 +373,7 @@ void PandaTaintVisitor::inlineCall(CallInst *CI) {
     }
 }
 
-void PandaTaintVisitor::inlineCallAfter(Instruction &I, Function *F, vector<Value *> &args) {
+CallInst *PandaTaintVisitor::inlineCallAfter(Instruction &I, Function *F, vector<Value *> &args) {
     assert(F);
     CallInst *CI = CallInst::Create(F, args);
     if (!CI) {
@@ -375,6 +384,7 @@ void PandaTaintVisitor::inlineCallAfter(Instruction &I, Function *F, vector<Valu
     if (F->size() == 1) { // no control flow
         inlineCall(CI);
     }
+    return CI;
 }
 
 void PandaTaintVisitor::inlineCallBefore(Instruction &I, Function *F, vector<Value *> &args) {
@@ -473,7 +483,7 @@ CallInst *PandaTaintVisitor::insertLogPop(Instruction &after) {
     return CI;
 }
 
-void PandaTaintVisitor::insertTaintCopy(Instruction &I,
+std::tuple<CallInst *, Value *, Value*> PandaTaintVisitor::insertTaintCopy(Instruction &I,
         Constant *shad_dest, Value *dest, Constant *shad_src, Value *src,
         uint64_t size) {
     // If these are llvm regs we have to interpret them as slots.
@@ -482,10 +492,10 @@ void PandaTaintVisitor::insertTaintCopy(Instruction &I,
     if (shad_src == llvConst && !isa<Constant>(src))
         src = constSlot(src);
 
-    insertTaintBulk(I, shad_dest, dest, shad_src, src, size, copyF);
+    return insertTaintBulk(I, shad_dest, dest, shad_src, src, size, copyF);
 }
 
-void PandaTaintVisitor::insertTaintBulk(Instruction &I,
+std::tuple<CallInst*, Value *, Value *> PandaTaintVisitor::insertTaintBulk(Instruction &I,
         Constant *shad_dest, Value *dest, Constant *shad_src, Value *src,
         uint64_t size, Function *func) {
     LLVMContext &ctx = I.getContext();
@@ -505,10 +515,11 @@ void PandaTaintVisitor::insertTaintBulk(Instruction &I,
         const_uint64(ctx, size), constInstr(&I)
     };
     Instruction *after = srcCI ? srcCI : (destCI ? destCI : &I);
-    inlineCallAfter(*after, func, args);
+    CallInst *tc_call = inlineCallAfter(*after, func, args);
 
     if (srcCI) inlineCall(srcCI);
     if (destCI) inlineCall(destCI);
+    return std::make_tuple(tc_call, src, dest);
 }
 
 // Make sure slot integers are slot integers! Will not fix for you.
@@ -524,7 +535,15 @@ void PandaTaintVisitor::insertTaintCopyOrDelete(Instruction &I,
     }
 }
 
-void PandaTaintVisitor::insertTaintPointer(Instruction &I,
+/*
+  I is the Call instr we were analyzing (mmu ld / st).
+  ptr is the value that is the ptr in the llvm code
+  val is what is getting stored, or dest for load.
+  ld: val = *ptr
+  st: *ptr = val
+  I think. 
+ */
+std::pair<CallInst *, Value *> PandaTaintVisitor::insertTaintPointer(Instruction &I,
         Value *ptr, Value *val, bool is_store) {
     LLVMContext &ctx = I.getContext();
     CallInst *popCI = insertLogPop(I);
@@ -542,11 +561,38 @@ void PandaTaintVisitor::insertTaintPointer(Instruction &I,
             shad_src, src, const_uint64(ctx, getValueSize(val)),
             const_uint64(ctx, is_store)
             };
-    inlineCallAfter(*popCI, pointerF, args);
+    CallInst *tp_call = inlineCallAfter(*popCI, pointerF, args);
 
     inlineCall(popCI);
+    return std::make_pair(tp_call, addr);
 }
 
+// tt_call is the prior call to something that transferred taint
+// we want the call to taint_load to come *after* that
+// paddr is phys addr of load.  ptr is vaddr
+void PandaTaintVisitor::insertTaintLoad(CallInst *tt_call, Value *paddr,  Value *ptr, Value *val) {
+    LLVMContext &ctx = tt_call->getContext();    
+    vector<Value *> args{
+        memConst, paddr, ptr,
+        llvConst, constSlot(val),
+        const_uint64(ctx, getValueSize(val))
+    };
+    inlineCallAfter(*tt_call, loadF, args);
+}
+
+// NB: ditto
+void PandaTaintVisitor::insertTaintStore(CallInst *tt_call, Value *paddr,  Value *ptr, Value *val) {
+ 
+    assert (!isa<Constant>(val));
+
+    LLVMContext &ctx = tt_call->getContext();    
+    vector<Value *> args{
+        memConst, paddr, ptr,
+        llvConst, constSlot(val),
+        const_uint64(ctx, getValueSize(val))
+    };
+    inlineCallAfter(*tt_call, storeF, args);
+}
 
 void PandaTaintVisitor::insertTaintMix(Instruction &I, Value *src) {
     insertTaintMix(I, &I, src);
@@ -583,7 +629,7 @@ void PandaTaintVisitor::insertTaintCompute(Instruction &I, Value *dest, Value *s
         if (is_mixed) {
             insertTaintMix(I, tainted);
         } else {
-            insertTaintCopy(I, llvConst, dest, llvConst, tainted, getValueSize(src2));
+            ignore_result (insertTaintCopy(I, llvConst, dest, llvConst, tainted, getValueSize(src2)));
         }
         return;
     }
@@ -932,7 +978,7 @@ void PandaTaintVisitor::insertStateOp(Instruction &I) {
         if (isStore && isa<Constant>(val)) {
             insertTaintDelete(I, destConst, dest, const_uint64(ctx, size));
         } else {
-            insertTaintCopy(I, destConst, dest, srcConst, src, size);
+            ignore_result(insertTaintCopy(I, destConst, dest, srcConst, src, size));
         }
     } else if (isa<Constant>(val) && isStore) {
         vector<Value *> args{
@@ -1032,9 +1078,9 @@ void PandaTaintVisitor::visitCastInst(CastInst &I) {
            // BROKEN
            assert(false && "Bad CastInst!!");
     }
-    insertTaintCopy(I, llvConst, &I,
-            llvConst, src,
-            std::min(srcSize, destSize));
+    ignore_result(insertTaintCopy(I, llvConst, &I,
+                                  llvConst, src,
+                                  std::min(srcSize, destSize)));
 }
 
 // Other operators
@@ -1193,22 +1239,42 @@ void PandaTaintVisitor::visitCallInst(CallInst &I) {
         } else if (calledName == "cpu_loop_exit") {
             return;
         } else if (ldFuncs.count(calledName) > 0) {
+            // this is the addr of the ld
             Value *ptr = I.getArgOperand(1);
+            CallInst *tt_call;  
+            Value *paddr;
             if (tainted_pointer && !isa<Constant>(ptr)) {
-                insertTaintPointer(I, ptr, &I, false);
+                std::pair<CallInst *, Value *> pair = insertTaintPointer(I, ptr, &I, false);
+                tt_call = pair.first;
+                paddr = pair.second;
             } else {
-                insertTaintCopy(I, llvConst, &I, memConst, NULL, getValueSize(&I));
+                std::tuple<CallInst *, Value *, Value *> tuple = insertTaintCopy(I, llvConst, &I, memConst, NULL, getValueSize(&I));
+                tt_call = std::get<0>(tuple);  
+                paddr = std::get<1>(tuple);   // src (addr of load)
             }
+            insertTaintLoad(tt_call, paddr, ptr, &I);
             return;
         } else if (stFuncs.count(calledName) > 0) {
+            // addr of store
             Value *ptr = I.getArgOperand(1);
+            // value to store there
             Value *val = I.getArgOperand(2);
+            CallInst *tt_call = NULL;
+            Value *paddr = NULL;
             if (tainted_pointer && !isa<Constant>(ptr)) {
-                insertTaintPointer(I, ptr, val, true /* is_store */ );
+                std::pair<CallInst *, Value *> pair = insertTaintPointer(I, ptr, val, true /* is_store */ );
+                tt_call = pair.first;
+                paddr = pair.second;
             } else if (isa<Constant>(val)) {
                 insertTaintDelete(I, memConst, NULL, const_uint64(ctx, getValueSize(val)));
             } else {
-                insertTaintCopy(I, memConst, NULL, llvConst, val, getValueSize(val));
+                std::tuple<CallInst *, Value *, Value*> tuple = insertTaintCopy(I, memConst, NULL, llvConst, val, getValueSize(val));
+                tt_call = std::get<0>(tuple);
+                paddr = std::get<2>(tuple);  // dest addr (of store)
+            }
+            //NB: we are *NOT* calling this if value being stored is a constant (taint delete).
+            if (paddr && tt_call && (!isa<Constant>(val))) {
+                insertTaintStore(tt_call, paddr, ptr, val);
             }
             return;
         } else if (unaryMathFuncs.count(calledName) > 0) {
@@ -1340,10 +1406,12 @@ void PandaTaintVisitor::visitExtractValueInst(ExtractValueInst &I) {
     unsigned offset = structLayout->getElementOffset(*I.idx_begin());
     uint64_t src = MAXREGSIZE * PST->getLocalSlot(aggregate) + offset;
 
-    insertTaintCopy(I,
-            llvConst, constSlot(&I),
-            llvConst, const_uint64(ctx, src),
-            getValueSize(&I));
+    ignore_result(
+        insertTaintCopy(I,
+                llvConst, constSlot(&I),
+                llvConst, const_uint64(ctx, src),
+                getValueSize(&I))
+    );
 }
 
 void PandaTaintVisitor::visitInsertValueInst(InsertValueInst &I) {
