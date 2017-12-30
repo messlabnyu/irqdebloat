@@ -206,11 +206,8 @@ bool is_arm_call(csh handle, cs_insn *insn) {
 }
 
 instr_type disas_block(CPUArchState* env, target_ulong pc, int size) {
-    unsigned char *buf = (unsigned char *) malloc(size);
-    int err = panda_virtual_memory_rw(ENV_GET_CPU(env), pc, buf, size, 0);
-    if (err == -1) printf("Couldn't read TB memory!\n");
+    size_t count;
     instr_type res = INSTR_UNKNOWN;
-
 #if defined(TARGET_I386)
     csh handle = (env->hflags & HF_LMA_MASK) ? cs_handle_64 : cs_handle_32;
 #elif defined(TARGET_ARM)
@@ -227,9 +224,16 @@ instr_type disas_block(CPUArchState* env, target_ulong pc, int size) {
     csh handle = cs_handle_32;
 #endif
 
+    unsigned char *buf = (unsigned char *) malloc(size);
+    int err = panda_virtual_memory_rw(ENV_GET_CPU(env), pc, buf, size, 0);
+    if (err == -1) {
+        printf("Couldn't read TB memory at " TARGET_FMT_lx "!\n", pc);
+        goto done2;
+    }
+
     cs_insn *insn;
     cs_insn *end;
-    size_t count = cs_disasm(handle, buf, size, pc, 0, &insn);
+    count = cs_disasm(handle, buf, size, pc, 0, &insn);
     if (count <= 0) goto done2;
 
     for (end = insn + count - 1; end >= insn; end--) {
@@ -284,7 +288,7 @@ int before_block_exec(CPUState *cpu, TranslationBlock *tb) {
     }
     for (int i = v.size()-1; i >= 0; i--) {
         if (tb->pc == v[i].pc && cur_sp == v[i].sp) {
-            printf("Return to 0x" TARGET_FMT_lx " has SP 0x" TARGET_FMT_lx " at depth %d\n", tb->pc, cur_sp, i);
+            //printf("Return to 0x" TARGET_FMT_lx " has SP 0x" TARGET_FMT_lx " at depth %d\n", tb->pc, cur_sp, i);
             PPP_RUN_CB(on_ret, cpu, w[i], tb->pc, get_stackid(env));
             v.erase(v.begin()+i, v.end());
             w.erase(w.begin()+i, w.end());
@@ -310,7 +314,7 @@ int after_block_exec(CPUState* cpu, TranslationBlock *tb) {
         function_stacks[get_stackid(env)].push_back(pc);
         PPP_RUN_CB(on_call, cpu, pc, tb->pc + tb->size, get_stackid(env));
 
-        printf("Return to 0x" TARGET_FMT_lx " will have SP 0x" TARGET_FMT_lx " at depth %lu\n", tb->pc + tb->size, sp, callstacks[get_stackid(env)].size());
+        //printf("Return to 0x" TARGET_FMT_lx " will have SP 0x" TARGET_FMT_lx " at depth %lu\n", tb->pc + tb->size, sp, callstacks[get_stackid(env)].size());
     }
     else if (tb_type == INSTR_RET) {
         //printf("Just executed a RET in TB " TARGET_FMT_lx "\n", tb->pc);
