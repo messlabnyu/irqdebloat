@@ -18,7 +18,6 @@ asid_instr_count
 replaymovie
 #rehost
 memsavep
-bbtrace
-loadcpu
-iofuzz
 iofuzz2
+iotaint
+loadstate
