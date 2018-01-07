@@ -81,6 +81,7 @@ bool before_block_exec(CPUState *env, TranslationBlock *tb) {
     }
     if (bb_counter++ > 1 && !init_taint_done) {
         printf("Enabling taint at pc=" TARGET_FMT_lx "\n", tb->pc);
+        taint2_enable_tainted_pointer();
         taint2_enable_taint();
         init_taint_done = true;
         return true;
