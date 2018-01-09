@@ -73,6 +73,9 @@ typedef enum panda_cb_type {
     PANDA_CB_UNASSIGNED_IO_READ,
     PANDA_CB_UNASSIGNED_IO_WRITE,
 
+    // Right after the machine is initialized, before any code runs
+    PANDA_CB_AFTER_MACHINE_INIT,
+
     PANDA_CB_LAST
 } panda_cb_type;
 
@@ -622,6 +625,8 @@ typedef union panda_cb {
 
   void (*unassigned_io_read)(CPUState *env, target_ulong pc, hwaddr addr, uint32_t size, uint64_t *val);
   void (*unassigned_io_write)(CPUState *env, target_ulong pc, hwaddr addr, uint32_t size, uint64_t *val);
+
+  void (*after_machine_init)(CPUState *env);
 
 } panda_cb;
 

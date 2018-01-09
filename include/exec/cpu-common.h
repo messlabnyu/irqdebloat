@@ -48,6 +48,7 @@ typedef uintptr_t ram_addr_t;
 #endif
 
 extern ram_addr_t ram_size;
+extern ram_addr_t ram_start;
 
 /* memory API */
 

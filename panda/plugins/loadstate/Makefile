@@ -2,7 +2,7 @@
 
 # If you need custom CFLAGS or LIBS, set them up here
 # CFLAGS+=
-# LIBS+=
+LIBS+=-lyaml-cpp
 
 # The main rule for your plugin. List all object-file dependencies.
 $(PLUGIN_TARGET_DIR)/panda_$(PLUGIN_NAME).so: \

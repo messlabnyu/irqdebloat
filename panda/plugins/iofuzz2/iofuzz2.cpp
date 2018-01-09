@@ -45,6 +45,7 @@ std::set<target_ulong> ioaddrs;
 std::set<target_ulong> seen_bbs;
 
 const char *memfile;
+const char *cpufile;
 const char *outdir;
 unsigned long fuzz_timeout;
 time_t start;
@@ -297,7 +298,7 @@ static int before_block_exec(CPUState *env, TranslationBlock *tb) {
     }
     else {
         dbgprintf("Hello, I'm the parent and I'll be running the show today. My PID is %d\n", getpid());
-        load_states(env, memfile);
+        load_states(env, memfile, cpufile);
         
         time_t gen_start_time, gen_end_time;
         std::set<int> allfds;
@@ -474,6 +475,7 @@ bool init_plugin(void *self) {
     if (!init_loadstate_api()) return false;
     panda_arg_list *args = panda_get_args("iofuzz2");
     memfile = panda_parse_string(args, "mem", "mem");
+    cpufile = panda_parse_string(args, "cpu", "cpu");
     fuzz_timeout = panda_parse_ulong(args, "timeout", 10);
     outdir = panda_parse_string(args, "dir", "irqfuzz");
     nr_cpu = panda_parse_uint32(args, "nproc", 16);

@@ -1,1 +1,1 @@
-void load_states(CPUState *env, const char *memfile);
+void load_states(CPUState *env, const char *memfile, const char *cpufile);

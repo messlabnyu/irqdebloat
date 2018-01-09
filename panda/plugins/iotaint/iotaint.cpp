@@ -71,22 +71,15 @@ bool init_done = false;
 bool init_taint_done = false;
 uint64_t bb_counter = 0;
 const char *memfile;
+const char *cpufile;
 
-bool before_block_exec(CPUState *env, TranslationBlock *tb) {
+void after_machine_init(CPUState *env) {
     //printf("TB: " TARGET_FMT_lx "\n", tb->pc);
-    if (!init_done) {
-        load_states(env, memfile);
-        cpu_interrupt(env, CPU_INTERRUPT_HARD);
-        init_done = true;
-    }
-    if (bb_counter++ > 1 && !init_taint_done) {
-        printf("Enabling taint at pc=" TARGET_FMT_lx "\n", tb->pc);
-        taint2_enable_tainted_pointer();
-        taint2_enable_taint();
-        init_taint_done = true;
-        return true;
-    }
-    return false;
+    load_states(env, memfile, cpufile);
+    //printf("Enabling taint at pc=" TARGET_FMT_lx "\n", tb->pc);
+    taint2_enable_tainted_pointer();
+    taint2_enable_taint();
+    //cpu_interrupt(env, CPU_INTERRUPT_HARD);
 }
 
 bool init_plugin(void *self) {
@@ -106,11 +99,12 @@ bool init_plugin(void *self) {
         iovals.push_back(strtoul(s.c_str(), NULL, 16));
     }
     memfile = panda_parse_string(args, "mem", "mem");
+    cpufile = panda_parse_string(args, "cpu", "cpu");
 
     panda_cb pcb = { .unassigned_io_read = ioread };
     panda_register_callback(self, PANDA_CB_UNASSIGNED_IO_READ, pcb);
-    pcb.before_block_exec_invalidate_opt = before_block_exec;
-    panda_register_callback(self, PANDA_CB_BEFORE_BLOCK_EXEC_INVALIDATE_OPT, pcb);
+    pcb.after_machine_init = after_machine_init;
+    panda_register_callback(self, PANDA_CB_AFTER_MACHINE_INIT, pcb);
 
     return true;
 }

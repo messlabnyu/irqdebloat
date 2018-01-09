@@ -146,6 +146,7 @@ extern bool panda_load_plugin(const char *, const char *);
 extern void panda_unload_plugins(void);
 extern char *panda_plugin_path(const char *name);
 void panda_set_os_name(char *os_name);
+extern void panda_callbacks_after_machine_init(void);
 
 extern void pandalog_cc_init_write(const char * fname); 
 int pandalog = 0;
@@ -177,6 +178,7 @@ int request_opengl = -1;
 int display_opengl;
 const char* keyboard_layout = NULL;
 ram_addr_t ram_size;
+ram_addr_t ram_start;
 const char *mem_path = NULL;
 int mem_prealloc = 0; /* force preallocation of physical target memory */
 bool enable_mlock = false;
@@ -4931,6 +4933,9 @@ int main(int argc, char **argv, char **envp)
     }
 
     os_setup_post();
+
+    // Call PANDA post-machine init hook
+    panda_callbacks_after_machine_init();
 
     panda_in_main_loop = 1;
     main_loop();

@@ -220,6 +220,7 @@ static void mach_rehosting_init(MachineState *machine)
 
     machine->ram_size = vbi->memmap[MEM].size;
     ram_size = vbi->memmap[MEM].size;
+    ram_start = vbi->memmap[MEM].base;
     memory_region_allocate_system_memory(ram, NULL, "ram",
                                          machine->ram_size);
     memory_region_add_subregion(sysmem, vbi->memmap[MEM].base, ram);

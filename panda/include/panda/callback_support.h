@@ -33,5 +33,7 @@ void panda_callbacks_cpuid(CPUState *env);
 void panda_callbacks_asid_changed(CPUState *env, target_ulong old_asid, target_ulong new_asid);
 // memory.c
 void panda_callbacks_unassigned_io(CPUState *env, hwaddr addr, uint32_t size, uint64_t *val, bool is_write);
+// vl.c
+void panda_callbacks_after_machine_init(void);
 
 #endif

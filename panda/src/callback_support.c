@@ -224,6 +224,15 @@ void panda_callbacks_unassigned_io(CPUState *env, hwaddr addr, uint32_t size,
     }
 }
 
+// vl.c
+void panda_callbacks_after_machine_init(void) {
+    panda_cb_list *plist;
+    for(plist = panda_cbs[PANDA_CB_AFTER_MACHINE_INIT]; plist != NULL;
+        plist = panda_cb_list_next(plist)) {
+        plist->entry.after_machine_init(first_cpu);
+    }
+}
+
 // target-i386/misc_helpers.c
 void panda_callbacks_cpuid(CPUState *env) {
     panda_cb_list *plist;
