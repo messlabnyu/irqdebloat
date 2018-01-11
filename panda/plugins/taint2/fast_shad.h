@@ -37,8 +37,11 @@ extern void taint_state_changed(FastShad *fast_shad, uint64_t addr, uint64_t siz
 #define taint_log(...) {}
 #define taint_log_labels(shad, src, size) {}
 #else
+extern "C" {
+    int qemu_log(const char *fmt, ...);
+}
 #define tassert(cond) assert((cond))
-#define taint_log(...) qemu_log_mask(CPU_LOG_TAINT_OPS, ## __VA_ARGS__);
+#define taint_log(...) qemu_log(__VA_ARGS__);
 #define taint_log_labels(shad, src, size) \
     extern int qemu_loglevel; \
     if (qemu_loglevel & CPU_LOG_TAINT_OPS) { \
