@@ -42,8 +42,8 @@ void on_taint_mmio_read(uint64_t paddr, target_ulong vaddr, uint64_t llvm_slot, 
     if (ioaddrs_seen.find(paddr) == ioaddrs_seen.end()) return;
     target_ulong pc = panda_current_pc(first_cpu);
     target_ulong asid = panda_current_asid(first_cpu);
-    printf ("instr=%" PRId64" LABEL %d pc=0x" TARGET_FMT_lx " asid=0x" TARGET_FMT_lx" paddr=%" PRIx64" size=%" PRId64 " labeling\n",
-        rr_get_guest_instr_count(), label_number, pc, asid, paddr, size);
+    printf ("instr=%" PRId64" LABEL %d pc=0x" TARGET_FMT_lx " asid=0x" TARGET_FMT_lx" paddr=%" PRIx64" size=%" PRId64 " llvm_slot=%" PRId64 " labeling\n",
+        rr_get_guest_instr_count(), label_number, pc, asid, paddr, size, llvm_slot);
     for (uint32_t o=0; o<size; o++) {
         taint2_label_llvm(llvm_slot, o, label_number);
     }
@@ -67,8 +67,7 @@ static void on_tainted_pc(Addr a, uint64_t size) {
     printf("Saw jump to tainted addr!\n");
 }
 
-bool init_done = false;
-bool init_taint_done = false;
+bool interrupt = false;
 uint64_t bb_counter = 0;
 const char *memfile;
 const char *cpufile;
@@ -79,7 +78,7 @@ void after_machine_init(CPUState *env) {
     //printf("Enabling taint at pc=" TARGET_FMT_lx "\n", tb->pc);
     taint2_enable_tainted_pointer();
     taint2_enable_taint();
-    //cpu_interrupt(env, CPU_INTERRUPT_HARD);
+    if (interrupt) cpu_interrupt(env, CPU_INTERRUPT_HARD);
 }
 
 bool init_plugin(void *self) {
@@ -100,6 +99,7 @@ bool init_plugin(void *self) {
     }
     memfile = panda_parse_string(args, "mem", "mem");
     cpufile = panda_parse_string(args, "cpu", "cpu");
+    interrupt = panda_parse_bool(args, "interrupt");
 
     panda_cb pcb = { .unassigned_io_read = ioread };
     panda_register_callback(self, PANDA_CB_UNASSIGNED_IO_READ, pcb);
