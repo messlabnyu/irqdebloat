@@ -60,6 +60,7 @@ void load_states(CPUState *env, const char *memfile, const char *cpufile) {
     for (hwaddr a = ram_start; a < ram_start+ram_size; a += 0x1000) {
         int n = fread(buf,1,0x1000,fp_mem);
         if (-1 == n) exit(1);
+#if 0
         printf("Debug: hexdump of %d bytes of RAM:\n", n);
         for (int i = 0; i < 0x1000; i += 16) {
             printf("%08lx ", a+i);
@@ -68,7 +69,7 @@ void load_states(CPUState *env, const char *memfile, const char *cpufile) {
             }
             printf("\n");
         }
-            
+#endif
         panda_physical_memory_rw(a, (uint8_t *)buf, n, 1);
     }
 #endif
