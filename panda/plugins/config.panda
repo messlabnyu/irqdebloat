@@ -16,8 +16,9 @@ win7x86intro
 wintrospection
 asid_instr_count
 replaymovie
-#rehost
 memsavep
 iofuzz2
 iotaint
 loadstate
+unigrams
+textprinter

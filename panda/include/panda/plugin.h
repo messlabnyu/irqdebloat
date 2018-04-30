@@ -14,6 +14,16 @@ PANDAENDCOMMENT */
 #ifndef __PANDA_PLUGIN_H__
 #define __PANDA_PLUGIN_H__
 
+/*
+ * Macros for better debug output.
+ */
+#ifdef PLUGIN_NAME
+#define PANDA_MSG PLUGIN_NAME ": "
+#else
+#define PANDA_MSG "PANDA: "
+#endif
+#define PANDA_FLAG_STATUS(flag) ((flag) ? "ENABLED" : "DISABLED")
+
 #include "panda/cheaders.h"
 
 #ifndef CONFIG_SOFTMMU
@@ -57,11 +67,6 @@ typedef enum panda_cb_type {
     PANDA_CB_USER_BEFORE_SYSCALL, // before system call
     PANDA_CB_USER_AFTER_SYSCALL,  // after system call (with return value)
 #endif
-#ifdef CONFIG_PANDA_VMI
-    PANDA_CB_VMI_AFTER_FORK,    // After returning from fork()
-    PANDA_CB_VMI_AFTER_EXEC,    // After returning from exec()
-    PANDA_CB_VMI_AFTER_CLONE,    // After returning from clone()
-#endif
     PANDA_CB_ASID_CHANGED,           // When CPU asid (address space identifier) changes
     PANDA_CB_REPLAY_HD_TRANSFER,     // in replay, hd transfer
     PANDA_CB_REPLAY_NET_TRANSFER,    // in replay, transfers within network card (currently only E1000)
@@ -75,6 +80,8 @@ typedef enum panda_cb_type {
 
     // Right after the machine is initialized, before any code runs
     PANDA_CB_AFTER_MACHINE_INIT,
+
+    PANDA_CB_TOP_LOOP,               // at top of loop that manages emulation.  good place to take a snapshot
 
     PANDA_CB_LAST
 } panda_cb_type;
@@ -627,7 +634,7 @@ typedef union panda_cb {
   void (*unassigned_io_write)(CPUState *env, target_ulong pc, hwaddr addr, uint32_t size, uint64_t *val);
 
   void (*after_machine_init)(CPUState *env);
-
+  void (*top_loop)(CPUState *env);
 } panda_cb;
 
 // Doubly linked list that stores a callback, along with its owner
@@ -652,7 +659,7 @@ typedef struct panda_plugin {
 void   panda_register_callback(void *plugin, panda_cb_type type, panda_cb cb);
 void   panda_unregister_callbacks(void *plugin);
 bool   panda_load_plugin(const char *filename, const char *plugin_name);
-bool   panda_add_arg(const char *arg, int arglen);
+bool   panda_add_arg(const char *plugin_name, const char *plugin_arg);
 bool   panda_add_plugin_args(char *plugin_name, char *plugin_args);
 void * panda_get_plugin_by_name(const char *name);
 void   panda_do_unload_plugin(int index);
@@ -683,18 +690,23 @@ extern bool panda_plugins_to_unload[MAX_PANDA_PLUGINS];
 extern bool panda_plugin_to_unload;
 extern bool panda_tb_chaining;
 
-extern char panda_argv[MAX_PANDA_PLUGIN_ARGS][256];
+extern const gchar *panda_argv[MAX_PANDA_PLUGIN_ARGS];
 extern int panda_argc;
 
 
 // this stuff is used by the new qemu cmd-line arg '-os os_name'
+typedef enum OSFamilyEnum { OS_UNKNOWN, OS_WINDOWS, OS_LINUX } PandaOsFamily;
 typedef enum OSTypeEnum { OST_UNKNOWN, OST_WINDOWS, OST_LINUX } PandaOsType;
 
 // these are set in panda_common.c via call to panda_set_os_name(os_name)
 extern PandaOsType panda_os_type;
-extern char *panda_os_name;
-extern uint32_t panda_os_bits;
+extern char *panda_os_name;           // the full name of the os, as provided by the user
+extern char *panda_os_family;         // parsed os family
+extern char *panda_os_variant;        // parsed os variant
+extern uint32_t panda_os_bits;        // parsed os bits
 extern char *panda_os_details;
+extern PandaOsFamily panda_os_familyno; // numeric identifier for family
+
 
 
 // Struct for holding a parsed key/value pair from
