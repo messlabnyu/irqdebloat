@@ -19,10 +19,10 @@ panda/src/plog-cc.o : panda/src/plog.pb.o
  
 # This will pick up changes in dynslice2.cpp
 panda/tools/dynslice2.o : panda/tools/dynslice2.cpp
-	$(CXX) $(CXXFLAGS) $(LLVM_CXXFLAGS) $(LLVM_LDFLAGS) -g -c -o panda/tools/dynslice2.o panda/tools/dynslice2.cpp $(LDFLAGS) $(LLVM_LIBS) 
+	$(CXX) $(CXXFLAGS) $(LLVM_CXXFLAGS) $(LLVM_LDFLAGS) -O0 -g -c -o panda/tools/dynslice2.o panda/tools/dynslice2.cpp $(LDFLAGS) $(LLVM_LIBS) 
 
 panda/tools/slice_analyzer.o : panda/tools/slice_analyzer.cpp
-	$(CXX) $(CXXFLAGS) -g -c -o panda/tools/slice_analyzer.o panda/tools/slice_analyzer.cpp $(LLVM_CXXFLAGS) $(LLVM_LIBS) $(LDFLAGS) 
+	$(CXX) $(CXXFLAGS) -O0 -g -c -o panda/tools/slice_analyzer.o panda/tools/slice_analyzer.cpp $(LLVM_CXXFLAGS) $(LLVM_LIBS) $(LDFLAGS) 
 
 dynslice2: $(DYNSLICE_OBJS)
 	$(CXX) $(CXXFLAGS) $(DYNSLICE_OBJS) $(LLVM_CXXFLAGS) $(LLVM_LDFLAGS) $(LLVM_LIBS) -g -o dynslice2 $(LDFLAGS)

@@ -129,7 +129,7 @@ int main(int argc, char **argv) {
     LLVMInitializeAllDisassemblers();
 
     LLVMDisasmContextRef dcr = LLVMCreateDisasm (
-        "i386-unknown-linux-gnu",
+        "i386-unknown-linux-gnu", //"arm-unknown-unknown-unknown", //old string: i386-unknown-linux-gnu
         NULL,
         0,
         NULL,
@@ -179,15 +179,19 @@ int main(int argc, char **argv) {
             printf(">>> Block %d\n", i);
             int j = 0;
             std::string targetAsm = "";
-            bool targetAsmSeen = true, targetAsmMarked = false;
+            //bool targetAsmSeen = true, targetAsmMarked = false;
 
             for (BasicBlock::iterator insn_it = it->begin(), insn_ed = it->end();
                     insn_it != insn_ed; ++insn_it) {
                     
+#if 0
                 if (MDNode* N = insn_it->getMetadata("targetAsm")){
 
                     if (!targetAsm.empty()){
-                        print_target_asm(dcr, targetAsm, targetAsmMarked);
+                        //print_target_asm(dcr, targetAsm, targetAsmMarked);
+                        for (unsigned char c : targetAsm)
+                            printf("%02x ", c);
+                        printf("\n");
                     }                    
                     
                     // updated targetAsm
@@ -196,22 +200,23 @@ int main(int argc, char **argv) {
                     targetAsmMarked = false;
                 }
 
+#endif
                 // If this llvm instruction is marked and we haven't already printed target asm for this inst
-                if (marked[f][i][j] && !targetAsmSeen){
+                if (marked[f][i][j]){
                     //Print target asm
-                    targetAsmSeen = true;
-                    targetAsmMarked = true;
-                };
+                    //targetAsmSeen = true;
+                    //targetAsmMarked = true;
+                    printf(" * ") ; print_insn(&*insn_it);
+                }
 
                 //printf("%c ", m);
-                //print_insn(&*insn_it);
                 j++;
             }
             
             //Print last instruction and mark
-            if (!targetAsm.empty()){
-                print_target_asm(dcr, targetAsm, targetAsmMarked);
-            }                    
+            //if (!targetAsm.empty()){
+            //    print_target_asm(dcr, targetAsm, targetAsmMarked);
+            //}                    
             i++;
         }
         

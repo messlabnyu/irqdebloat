@@ -51,6 +51,8 @@ extern "C" {
 #include "llvm/Support/Regex.h"
 
 #define MAX_BITSET 2048
+#define ARCH_I386 0
+#define ARCH_ARM 1
 
 using namespace llvm;
 
@@ -561,8 +563,12 @@ void slice_trace(std::vector<traceEntry> &aligned_block, std::set<SliceVar> &wor
         // if so, replace use in worklist with function arg
         if (traceIt->func != entry_tb_func){
             // get most recent argMap off of argStack
+            if (argMapStack.size() == 0) {
+                printf("ERROR: Subfunction arg map is null.\n");
+                continue;
+            }            
             std::map<SliceVar, SliceVar> subfArgMap = argMapStack.top();
-            
+
             for (auto usesIt = uses.begin(); usesIt != uses.end(); ){
                 auto argIt = subfArgMap.find(*usesIt);
                 if(argIt != subfArgMap.end()){
@@ -639,11 +645,23 @@ int align_function(std::vector<traceEntry> &aligned_block, llvm::Function* f, st
 
     BasicBlock &entry = f->getEntryBlock();
     BasicBlock *nextBlock = &entry;
-
+    /*if (nextBlock == NULL) {
+        printf("Error: no entry block found for function %s\n", f->getName().str().c_str());
+        exit(1);
+    }
+    else
+        nextBlock->dump();
+    */
     bool has_successor = true;
     while (has_successor) {
         has_successor = false;
         
+        if (nextBlock == NULL) {
+            printf("Error: no entry block found for function %s\n", f->getName().str().c_str());
+            exit(1);
+        } else
+            nextBlock->dump();
+
         int inst_index = 0;
         for (BasicBlock::iterator i = nextBlock->begin(), e = nextBlock->end(); i != e; ++i) {
             traceEntry t;
@@ -718,7 +736,18 @@ int align_function(std::vector<traceEntry> &aligned_block, llvm::Function* f, st
                     //update next block to examine
                     has_successor = true;
                     BranchInst *b = cast<BranchInst>(&*i);
-                    nextBlock = b->getSuccessor(!(ple->llvmentry().condition()));
+                    if (b->isConditional()) {
+                        nextBlock = b->getSuccessor(!(ple->llvmentry().condition()));
+                    }
+                    else {
+                        // For unconditional branches the log entry is nonsense
+                        nextBlock = b->getSuccessor(0);
+                    }
+
+                    if (nextBlock == NULL) {
+                        printf("ERROR: we tried to get the successor to a branch (log entry: %d) but got NULL\n",
+                            ple->llvmentry().condition());
+                    }
                     //nextBlock->dump();
 
                     aligned_block.push_back(t);
@@ -755,6 +784,11 @@ int align_function(std::vector<traceEntry> &aligned_block, llvm::Function* f, st
                     has_successor = true;
                     SwitchInst::CaseIt caseIndex = s->findCaseValue(caseVal);
                     nextBlock = s->getSuccessor(caseIndex.getSuccessorIndex());
+                    if (nextBlock == NULL) {
+                        printf("ERROR: we tried to get the successor to a switch (caseVal %d, caseIndex %d) but got NULL\n",
+                            ple->llvmentry().condition(), caseIndex);
+                    }
+
                     //nextBlock->dump();
 
                     panda::LogEntry *bbPle = ple_vector[cursor_idx+1];
@@ -820,7 +854,10 @@ int align_function(std::vector<traceEntry> &aligned_block, llvm::Function* f, st
                     //update next block to be inside calling function. 
                     CallInst *call = cast<CallInst>(&*i);
                     Function *subf = call->getCalledFunction();
-                    assert(subf != NULL);
+                    if (subf == NULL) {
+                        printf("ERROR: couldn't get called function (may be external?)\n");
+                        break;
+                    }
                     StringRef func_name = subf->getName();
                 
                     if (func_name.startswith("record")){
@@ -978,37 +1015,72 @@ SliceVar VarFromStr(const char *str) {
     return std::make_pair(typ, addr);
 }
 
-uint64_t infer_offset(const char* reg){
+uint64_t infer_offset(const char* reg, int arch){
 	printf("infer offset of %s\n", reg);
-    if (strncmp(reg, "EAX", 3) == 0) {
-        return 0;
+    if (arch == ARCH_I386) {
+        if (strncmp(reg, "EAX", 3) == 0) {
+            return 0;
+        }
+        else if (strncmp(reg, "ECX", 3) == 0) {
+            return 1;
+        }
+        else if (strncmp(reg, "EDX", 3) == 0) {
+            return 2;
+        }
+        else if (strncmp(reg, "EBX", 3) == 0) {
+            return 3;
+        }
+        else if (strncmp(reg, "ESP", 3) == 0) {
+            return 4;
+        }
+        else if (strncmp(reg, "EBP", 3) == 0) {
+            return 5;
+        }
+        else if (strncmp(reg, "ESI", 3) == 0) {
+            return 6;
+        }
+        else if (strncmp(reg, "EDI", 3) == 0) {
+            return 7;
+        }
+        else if (strncmp(reg, "EIP", 3) == 0) {
+            return 8;
+        }
     }
-    else if (strncmp(reg, "ECX", 3) == 0) {
-        return 1;
+    else if (arch == ARCH_ARM) {
+        if (strncmp(reg, "R0", 2) == 0)
+            return 0;
+        else if (strncmp(reg, "R1", 2) == 0)
+            return 1;
+        else if (strncmp(reg, "R2", 2) == 0)
+            return 2;
+        else if (strncmp(reg, "R3", 2) == 0)
+            return 3;
+        else if (strncmp(reg, "R4", 2) == 0)
+            return 4;
+        else if (strncmp(reg, "R5", 2) == 0)
+            return 5;
+        else if (strncmp(reg, "R6", 2) == 0)
+            return 6;
+        else if (strncmp(reg, "R7", 2) == 0)
+            return 7;
+        else if (strncmp(reg, "R8", 2) == 0)
+            return 8;
+        else if (strncmp(reg, "R9", 2) == 0)
+            return 9;
+        else if (strncmp(reg, "R10", 3) == 0)
+            return 10;
+        else if (strncmp(reg, "R11", 3) == 0)
+            return 11;
+        else if (strncmp(reg, "R12", 3) == 0)
+            return 12;
+        else if (strncmp(reg, "R13", 3) == 0)
+            return 13;
+        else if (strncmp(reg, "R14", 3) == 0)
+            return 14;
+        else if (strncmp(reg, "R15", 3) == 0)
+            return 15;
     }
-    else if (strncmp(reg, "EDX", 3) == 0) {
-        return 2;
-    }
-    else if (strncmp(reg, "EBX", 3) == 0) {
-        return 3;
-    }
-    else if (strncmp(reg, "ESP", 3) == 0) {
-        return 4;
-    }
-    else if (strncmp(reg, "EBP", 3) == 0) {
-        return 5;
-    }
-    else if (strncmp(reg, "ESI", 3) == 0) {
-        return 6;
-    }
-    else if (strncmp(reg, "EDI", 3) == 0) {
-        return 7;
-    }
-    else if (strncmp(reg, "EIP", 3) == 0) {
-        return 8;
-    }
-
-	printf("NOT an x86 reg: %s\n", reg);
+	printf("NOT a supported reg: %s\n", reg);
 	return -1;
 }
 
@@ -1025,7 +1097,7 @@ int addr_to_tb(uint64_t addr){
 
 }
 
-SliceVar VarFromCriteria(std::string str){
+SliceVar VarFromCriteria(std::string str, int arch){
     
     SliceVarType typ = LLVM;
 
@@ -1038,7 +1110,7 @@ SliceVar VarFromCriteria(std::string str){
 
 	std::string crit = str.substr(0, str.find(" at ")); 
 	std::string reg = crit.substr(4, crit.length()); 
-	uint64_t sliceVal = cpustatebase + infer_offset(reg.c_str())*4;
+	uint64_t sliceVal = cpustatebase + infer_offset(reg.c_str(), arch)*4;
 	str.erase(0, str.find(" at ") + 4);
     printf("Reg: %s, addr: %s, sliceVal: %lx\n", reg.c_str(), str.c_str(), sliceVal);
 
@@ -1069,7 +1141,7 @@ SliceVar VarFromCriteria(std::string str){
 
 
 void usage(char *prog) {
-   fprintf(stderr, "Usage: %s [OPTIONS] <llvm_mod> <dynlog> <criteria_file>\n",
+   fprintf(stderr, "Usage: %s [OPTIONS] <architecture> <llvm_mod> <dynlog> <criteria_file>\n",
            prog);
    fprintf(stderr, "Options:\n"
            "  -d                : enable debug output\n"
@@ -1086,8 +1158,9 @@ void usage(char *prog) {
 int main(int argc, char **argv){
     //parse args 
     
-    if (argc < 4) {
-        printf("Usage: <llvm-mod.bc> <trace-file> <criterion> (<criterion>)\n");
+    if (argc < 5) {
+        printf("Usage: <architecture> <llvm-mod.bc> <trace-file> <criterion> (<criterion>)\n");
+        printf("Architectures currently supported: i386, arm\n");
         return EXIT_FAILURE;   
     }
 
@@ -1099,7 +1172,7 @@ int main(int argc, char **argv){
     bool align_only = false;
     const char *output = NULL;
      
-    while ((opt = getopt(argc, argv, "vbdn:p:o:")) != -1) {
+    while ((opt = getopt(argc, argv, "vbdn:p:o:a:")) != -1) {
         switch (opt) {
         case 'p':
             pc = strtoul(optarg, NULL, 16);
@@ -1116,9 +1189,20 @@ int main(int argc, char **argv){
         }
     }
 
-    char *llvm_mod_fname = argv[optind];
-    char *llvm_trace_fname = argv[optind+1];
-    char *criteria_fname = argv[optind+2];
+    char *architecture = argv[optind];
+    int arch;
+    if (strncmp(architecture, "i386", 4) == 0) {
+        arch = ARCH_I386;
+    } else if (strncmp(architecture, "arm", 3) == 0) {
+        arch = ARCH_ARM;
+    } else {
+        printf("Sorry, this architecture is not supported yet.");
+        return EXIT_FAILURE;
+    }
+     
+    char *llvm_mod_fname = argv[optind+1];
+    char *llvm_trace_fname = argv[optind+2];
+    char *criteria_fname = argv[optind+3];
 
     // Maintain a working set 
     // if mem, search for last occurrence of that physical address  
@@ -1153,7 +1237,7 @@ int main(int argc, char **argv){
     {
         // Process str
 		if (!str.empty()){
-        	workList.insert(VarFromCriteria(str));
+        	workList.insert(VarFromCriteria(str, arch));
 		}
     }
 
@@ -1174,8 +1258,8 @@ int main(int argc, char **argv){
     std::vector<traceEntry> aligned_block;
     
     PandaLog p;
-    printf("Opening logfile %s for read\n", argv[2]);
-    p.open_read_bwd((const char *) argv[2]);
+    printf("Opening logfile %s for read\n", argv[3]);
+    p.open_read_bwd((const char *) argv[3]);
     std::unique_ptr<panda::LogEntry> ple;
     panda::LogEntry* ple_raw;
 
@@ -1206,7 +1290,10 @@ int main(int argc, char **argv){
             sprintf(namebuf, "tcg-llvm-tb-%lu-%lx", ple->llvmentry().tb_num(), ple->pc());
 			printf("********** %s **********\n", namebuf);
             Function *f = mod->getFunction(namebuf);
-            
+            if (f == NULL) {
+                printf("Tried to get LLVM function for %s and failed.\n", namebuf);
+                exit(1);
+            } 
             assert(f != NULL);
             
             //Check if this translation block is complete -- that is, if it ends with a return marker

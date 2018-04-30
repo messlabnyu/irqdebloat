@@ -159,13 +159,13 @@ void recordLoad(uint64_t address){
         std::unique_ptr<panda::LogEntry> ple (new panda::LogEntry());
         ple->mutable_llvmentry()->set_type(FunctionCode::FUNC_CODE_INST_LOAD);
 
-        uint64_t x86state = (uint64_t)cpus.tqh_first->env_ptr;
+        uint64_t cpustate = (uint64_t)cpus.tqh_first->env_ptr;
 		
         //printf("Address: %lx, firstcpu: %lx - %lx\n", address, (uint64_t)first_cpu, (uint64_t)first_cpu + sizeof(CPUState));
 		/*printf("Address: %lx, cpux86state: %lx - %lx\n", address, x86state, x86state + sizeof(CPUState));*/
         //printf("Value %lu\n", value);
-        if ((address >= x86state) && (address < x86state + sizeof(CPUState))){
-            uint32_t reg_offset = (address - x86state)/4;
+        if ((address >= cpustate) && (address < cpustate + sizeof(CPUArchState))){
+            uint32_t reg_offset = (address - cpustate)/sizeof(target_ulong);
 			/*printf("%u\n", reg_offset);*/
 			//printf("%s\n", infer_register(reg_offset));
             ple->mutable_llvmentry()->set_addr_type(TGT); // Something in CPU state, may not necessarily be a register
@@ -176,7 +176,7 @@ void recordLoad(uint64_t address){
         }
 
         ple->mutable_llvmentry()->set_address(address);
-        ple->mutable_llvmentry()->set_num_bytes(4);
+        ple->mutable_llvmentry()->set_num_bytes(4); // FIXME
 
         globalLog.write_entry(std::move(ple));
     }
@@ -191,13 +191,13 @@ void recordStore(uint64_t address, uint64_t value){
         ple->mutable_llvmentry()->set_type(FunctionCode::FUNC_CODE_INST_STORE);
 
         //TODO: THIS REALLY NEEDS TO BE LOOKED AT 
-        uint64_t x86state = (uint64_t)cpus.tqh_first->env_ptr;
+        uint64_t cpustate = (uint64_t)cpus.tqh_first->env_ptr;
         
         /*printf("Address: %lx, firstcpu: %lx - %lx\n", address, (uint64_t)first_cpu, (uint64_t)first_cpu + sizeof(CPUState));*/
 		/*printf("Address: %lx, cpux86state: %lx - %lx\n", address, x86state, x86state + sizeof(CPUState));*/
         /*printf("Value %lu\n", value);*/
-        if ((address >= x86state) && (address < x86state + sizeof(CPUState))){
-            uint32_t reg_offset = (address - x86state)/4;
+        if ((address >= cpustate) && (address < cpustate + sizeof(CPUArchState))){
+            uint32_t reg_offset = (address - cpustate)/sizeof(target_ulong);
 			/*printf("%u\n", reg_offset);*/
 			/*printf("%s\n", infer_register(reg_offset));*/
             ple->mutable_llvmentry()->set_addr_type(TGT); // Something in CPU state, may not necessarily be a register
@@ -208,7 +208,7 @@ void recordStore(uint64_t address, uint64_t value){
         }
 
         ple->mutable_llvmentry()->set_address(address);
-        ple->mutable_llvmentry()->set_num_bytes(4);
+        ple->mutable_llvmentry()->set_num_bytes(4); // FIXME
         ple->mutable_llvmentry()->set_value(value);
 
         globalLog.write_entry(std::move(ple));
@@ -285,6 +285,7 @@ static void llvm_init(){
 
     passMngr->doInitialization();
 
+#if 0
 	 printf("eip: %lu\n", offsetof(CPUX86State, eip)/4);
 	 printf("cc_dst: %lu\n", offsetof(CPUX86State, cc_dst)/4);
 	 printf("xmm_regs: %lu\n", offsetof(CPUX86State, xmm_regs)/4);
@@ -298,8 +299,8 @@ static void llvm_init(){
 	 printf("fpregs: %lu\n", offsetof(CPUX86State, fpregs)/4);
 	 printf("fpop: %lu\n", offsetof(CPUX86State, fpop)/4);
 
-
 	 printf("exception_next_eip: %lu\n", offsetof(CPUX86State, exception_next_eip)/4);
+#endif
 
 }
 
