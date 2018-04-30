@@ -99,6 +99,7 @@ const static std::set<std::string> external_helper_funcs{
     "helper_ret_stb_mmu_panda",
     "helper_inb", "helper_inw", "helper_inl", "helper_inq",
     "helper_outb", "helper_outw", "helper_outl", "helper_outq", 
+    "helper_cpsr_write_eret_llvm",
 };
 
 
