@@ -233,15 +233,6 @@ void panda_callbacks_after_machine_init(void) {
     }
 }
 
-// vl.c
-void panda_callbacks_after_machine_init(void) {
-    panda_cb_list *plist;
-    for(plist = panda_cbs[PANDA_CB_AFTER_MACHINE_INIT]; plist != NULL;
-        plist = panda_cb_list_next(plist)) {
-        plist->entry.after_machine_init(first_cpu);
-    }
-}
-
 void panda_callbacks_top_loop(void) {
     panda_cb_list *plist;
     for(plist = panda_cbs[PANDA_CB_TOP_LOOP]; plist != NULL;

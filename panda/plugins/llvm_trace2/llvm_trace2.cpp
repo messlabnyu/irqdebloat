@@ -338,7 +338,6 @@ bool PandaLLVMTracePass::doInitialization(Module &module){
     ADD_MAPPING(recordReturn);
     return true; //modified program
 };
->>>>>>> tmp
 
 //********************************************************
 // Visit functions
