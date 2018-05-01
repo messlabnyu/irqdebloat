@@ -1,5 +1,5 @@
 SRC_PATH=.
-BUILD_DIR=build
+BUILD_DIR=build_merged
 LLVM_CONFIG=/home/birkan/llvm/Release/bin/llvm-config
 DYNSLICE_OBJS = $(SRC_PATH)/panda/src/plog.pb.o $(SRC_PATH)/panda/src/plog-cc.o $(SRC_PATH)/panda/tools/dynslice2.o 
 LLVM_CXXFLAGS=$(shell $(LLVM_CONFIG) --cxxflags)
