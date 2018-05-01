@@ -36,20 +36,33 @@ extern "C" {
 
 #include "panda/plog-cc.hpp"
 
+void pprint_llvmentry(std::unique_ptr<panda::LogEntry> ple){
+    printf("\tllvmEntry: {\n");
+    printf("\t type = %lu\n", ple->llvmentry().type()); 
+    printf("\t addrtype = %u\n", ple->llvmentry().addr_type()); 
+    printf("\t cpustate_offset = %u\n", ple->llvmentry().cpustate_offset()); 
+    printf("\t address = %lx\n", ple->llvmentry().address());
+    printf("\t numBytes = %lx\n", ple->llvmentry().num_bytes());
+    printf("\t value = %lu(%lx)\n", ple->llvmentry().value(), ple->llvmentry().value());
+    printf("\t condition = %u\n", ple->llvmentry().condition());
+    printf("\t flags = %x\n", ple->llvmentry().flags());
+    //printf("\t}\n"); 
+}
+
 void pprint(std::unique_ptr<panda::LogEntry> ple) {
     if (ple == NULL) {
         printf("PLE is NULL\n");
         return;
     }
 
-    printf("\n{\n");
-    printf("\tPC = %lu\n", ple->pc());
+    printf("{\n");
+    printf("\tPC = %lx\n", ple->pc());
     printf("\tinstr = %lu\n", ple->instr());
 
-    /*if (ple->has_llvmentry()) {*/
-        /*pprint_llvmentry(std::move(ple));*/
-    /*}*/
-    printf("}\n\n");
+    if (ple->has_llvmentry()) {
+        pprint_llvmentry(std::move(ple));
+    }
+    printf("},\n");
 }
 
 int main (int argc, char **argv) {

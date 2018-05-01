@@ -8,6 +8,13 @@
 
 using namespace std; 
 
+extern "C" {
+#ifndef PLOG_READER
+#include "panda/rr/rr_log.h"
+#include "panda/common.h"
+#endif
+}
+
 #ifndef PLOG_READER
 extern int panda_in_main_loop;
 #endif
