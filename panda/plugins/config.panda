@@ -18,6 +18,7 @@ asid_instr_count
 replaymovie
 memsavep
 iofuzz2
+ioreplay
 iotaint
 loadstate
 unigrams
