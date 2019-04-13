@@ -19,15 +19,6 @@
 
 #include "panda/checkpoint.h"
 
-static int memfd_create(const char *name, unsigned int flags)
-{
-#ifdef __NR_memfd_create
-    return syscall(__NR_memfd_create, name, flags);
-#else
-    return -1;
-#endif
-}
-
 static QLIST_HEAD(, Checkpoint) checkpoints = QLIST_HEAD_INITIALIZER(checkpoints);
 
 extern RR_log_entry *rr_queue_head;
