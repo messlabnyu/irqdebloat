@@ -298,7 +298,7 @@ static int before_block_exec(CPUState *env, TranslationBlock *tb) {
     }
     else {
         dbgprintf("Hello, I'm the parent and I'll be running the show today. My PID is %d\n", getpid());
-        load_states(env, memfile, cpufile);
+        //load_states(env, memfile, cpufile);
         
         time_t gen_start_time, gen_end_time;
         std::set<int> allfds;
@@ -414,37 +414,6 @@ static int before_block_exec(CPUState *env, TranslationBlock *tb) {
     return 0;
 }
 
-#if 0
-static int after_read(CPUState *cpu, target_ulong pc, target_ulong addr,
-                                       target_ulong size, void *buf)
-{
-    uint64_t val = 0;
-
-    if (size == 1)
-        val = *((uint8_t *)buf);
-    else if (size == 2)
-        val = *((uint16_t *)buf);
-    else if (size == 4)
-        val = *((uint32_t *)buf);
-    else if (size == 8)
-        val = *((uint64_t *)buf);
-    else
-        assert(0);
-
-    dbgprintf("PMEM_AFTER_READ " TARGET_FMT_lx " " TARGET_FMT_lx " %" PRIx64 "\n", pc, addr, val);
-
-    return 0;
-}
-
-static int before_virt_read(CPUState *cpu, target_ulong pc, target_ulong addr,
-                                       target_ulong size)
-{
-    //dbgprintf("VMEM_BEFORE_READ " TARGET_FMT_lx " " TARGET_FMT_lx "\n", pc, addr);
-    return 0;
-}
-
-#endif
-
 static void iowrite(CPUState *env, target_ulong pc, hwaddr addr, uint32_t size, uint64_t *val) {
     ioaddrs.insert(addr);
 }
@@ -470,6 +439,10 @@ static void ioread(CPUState *env, target_ulong pc, hwaddr addr, uint32_t size, u
     *val = fuzz;
 }
 
+void after_machine_init(CPUState *env) {
+    load_states(env, memfile, cpufile);
+}
+
 bool init_plugin(void *self) {
     panda_require("loadstate");
     if (!init_loadstate_api()) return false;
@@ -487,10 +460,8 @@ bool init_plugin(void *self) {
     panda_register_callback(self, PANDA_CB_UNASSIGNED_IO_WRITE, pcb);
     pcb.before_block_exec = before_block_exec;
     panda_register_callback(self, PANDA_CB_BEFORE_BLOCK_EXEC, pcb);
-    //pcb.phys_mem_after_read = after_read;
-    //panda_register_callback(self, PANDA_CB_PHYS_MEM_AFTER_READ, pcb);
-    //pcb.virt_mem_before_read = before_virt_read;
-    //panda_register_callback(self, PANDA_CB_VIRT_MEM_BEFORE_READ, pcb);
+    pcb.after_machine_init = after_machine_init;
+    panda_register_callback(self, PANDA_CB_AFTER_MACHINE_INIT, pcb);
 
     panda_enable_precise_pc();
 
