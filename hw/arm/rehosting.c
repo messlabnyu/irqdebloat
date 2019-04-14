@@ -199,7 +199,7 @@ static void mach_rehosting_init(MachineState *machine)
             exit(1);
         }
         cpuobj = object_new(object_class_get_name(oc));
-        object_property_set_bool(cpuobj, false, "has_el3", NULL); // Disable TrustZone
+        //object_property_set_bool(cpuobj, false, "has_el3", NULL); // Disable TrustZone
 
         if (vbi->using_psci) {
             object_property_set_int(cpuobj, QEMU_PSCI_CONDUIT_HVC,
