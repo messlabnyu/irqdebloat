@@ -38,17 +38,69 @@ void load_states(CPUState *env, const char *memfile, const char *cpufile) {
     }
     printf("daif = %#x\n", cpuregs["daif"].as<uint32_t>());
     envp->daif = cpuregs["daif"].as<uint32_t>();
-    printf("cp15.dacr_ns= %#x\n", cpuregs["cp15.dacr_ns"].as<uint32_t>());
+    printf("cp15.dacr_ns = %#x\n", cpuregs["cp15.dacr_ns"].as<uint32_t>());
     envp->cp15.dacr_ns = cpuregs["cp15.dacr_ns"].as<uint32_t>();
+    printf("cp15.dacr_s = %#x\n", cpuregs["cp15.dacr_s"].as<uint32_t>());
+    envp->cp15.dacr_s = cpuregs["cp15.dacr_s"].as<uint32_t>();
+    printf("cp15.scr_el3 = %#x\n", cpuregs["cp15.scr_el3"].as<uint32_t>());
+    envp->cp15.scr_el3 = cpuregs["cp15.scr_el3"].as<uint32_t>();
+    printf("cp15.hcr_el2 = %#x\n", cpuregs["cp15.hcr_el2"].as<uint32_t>());
+    envp->cp15.hcr_el2 = cpuregs["cp15.hcr_el2"].as<uint32_t>();
+    printf("uncached_cpsr = %#x\n", cpuregs["uncached_cpsr"].as<uint32_t>());
+    envp->uncached_cpsr = cpuregs["uncached_cpsr"].as<uint32_t>();
+    printf("features = %#lx\n", cpuregs["features"].as<uint64_t>());
+    envp->features = cpuregs["features"].as<uint64_t>();
+    printf("spsr = %#x\n", cpuregs["spsr"].as<uint32_t>());
+    envp->spsr = cpuregs["spsr"].as<uint32_t>();
+
+    printf("TTBR0_EL[] = { ");
     for (int i = 0; i < 4; i++){
+        printf("%#x ", cpuregs["cp15.ttbr0_el"][i].as<uint32_t>());
         envp->cp15.ttbr0_el[i] = cpuregs["cp15.ttbr0_el"][i].as<uint32_t>();
     }
+    printf("}\n");
+
+    printf("TTBR1_EL[] = { ");
     for (int i = 0; i < 4; i++){
+        printf("%#x ", cpuregs["cp15.ttbr1_el"][i].as<uint32_t>());
         envp->cp15.ttbr1_el[i] = cpuregs["cp15.ttbr1_el"][i].as<uint32_t>();
     }
+    printf("}\n");
+
+    printf("SCTLR_EL[] = { ");
     for (int i = 0; i < 4; i++){
+        printf("%#x ", cpuregs["cp15.sctlr_el"][i].as<uint32_t>());
         envp->cp15.sctlr_el[i] = cpuregs["cp15.sctlr_el"][i].as<uint32_t>();
     }
+    printf("}\n");
+
+    printf("VBAR_EL[] = { ");
+    for (int i = 0; i < 4; i++){
+        printf("%#x ", cpuregs["cp15.vbar_el"][i].as<uint32_t>());
+        envp->cp15.vbar_el[i] = cpuregs["cp15.vbar_el"][i].as<uint32_t>();
+    }
+    printf("}\n");
+
+    printf("banked_spsr[] = { ");
+    for (int i = 0; i < 8; i++){
+        printf("%#x ", cpuregs["banked_spsr"][i].as<uint32_t>());
+        envp->banked_spsr[i] = cpuregs["banked_spsr"][i].as<uint32_t>();
+    }
+    printf("}\n");
+
+    printf("banked_r13[] = { ");
+    for (int i = 0; i < 8; i++){
+        printf("%#x ", cpuregs["banked_r13"][i].as<uint32_t>());
+        envp->banked_r13[i] = cpuregs["banked_r13"][i].as<uint32_t>();
+    }
+    printf("}\n");
+
+    printf("banked_r14[] = { ");
+    for (int i = 0; i < 8; i++){
+        printf("%#x ", cpuregs["banked_r14"][i].as<uint32_t>());
+        envp->banked_r14[i] = cpuregs["banked_r14"][i].as<uint32_t>();
+    }
+    printf("}\n");
 
     //LOAD MEM
     FILE *fp_mem;
