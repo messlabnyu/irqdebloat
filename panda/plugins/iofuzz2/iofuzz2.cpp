@@ -55,6 +55,11 @@ int comm_socket;
 bool child = false;
 size_t execs = 0;
 uint32_t nr_cpu = 16;
+bool fiq = false;
+
+#ifndef TARGET_ARM
+#define CPU_INTERRUPT_FIQ 0
+#endif
 
 #define MAX_BLOCKS_SINCE_NEW_COV 100
 int num_blocks_since_new_cov = 0;
@@ -202,6 +207,8 @@ static bool update_coverage(int fd, std::vector<unsigned long> &ioseq) {
         for (auto i : ioseq) dbgprintf("%#lx ", i);
         dbgprintf("}\n");
 #endif
+        // This is going to create a ton of files
+        //save_coverage(ioseq, std::make_pair(local_ioaddrs, local_cov));
         ioseq.clear();
     }
     return res.second;
@@ -225,7 +232,8 @@ int start_child(CPUState *env) {
         }
         dbgprintf("}\n");
         // Kick off the interrupt
-        cpu_interrupt(env,CPU_INTERRUPT_HARD);
+        cpu_interrupt(env, CPU_INTERRUPT_HARD |
+            (fiq ? CPU_INTERRUPT_FIQ : 0));
         return 0;
     }
     else {
@@ -238,6 +246,7 @@ int start_child(CPUState *env) {
 
 void genconst(std::vector<uint64_t> &prefix, std::deque<std::vector<uint64_t>> &out) {
     // Well-known constants
+    out.push_back(prefix); out.back().push_back(0x0L);
     out.push_back(prefix); out.back().push_back(0xffffffffffffffffL);
     out.push_back(prefix); out.back().push_back(0x0f0f0f0f0f0f0f0fL);
     out.push_back(prefix); out.back().push_back(0xf0f0f0f0f0f0f0f0L);
@@ -452,6 +461,7 @@ bool init_plugin(void *self) {
     fuzz_timeout = panda_parse_ulong(args, "timeout", 10);
     outdir = panda_parse_string(args, "dir", "irqfuzz");
     nr_cpu = panda_parse_uint32(args, "nproc", 16);
+    fiq = panda_parse_bool(args, "fiq");
     mkdir(outdir, 0755);
 
     panda_cb pcb = { .unassigned_io_read = ioread };
@@ -463,6 +473,7 @@ bool init_plugin(void *self) {
     pcb.after_machine_init = after_machine_init;
     panda_register_callback(self, PANDA_CB_AFTER_MACHINE_INIT, pcb);
 
+    panda_disable_tb_chaining();
     panda_enable_precise_pc();
 
     return true;

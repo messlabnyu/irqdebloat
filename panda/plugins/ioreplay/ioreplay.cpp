@@ -37,6 +37,19 @@ std::set<uint64_t> ioaddrs_seen;
 std::deque<uint64_t> iovals;
 uint32_t label_number = 1;
 
+bool interrupt = false;
+bool fiq = false;
+bool ioreplay_debug = false;
+uint64_t bb_counter = 0;
+const char *memfile;
+const char *cpufile;
+uint64_t num_blocks = 0;
+uint32_t start;
+
+#ifndef TARGET_ARM
+#define CPU_INTERRUPT_FIQ 0
+#endif
+
 static void ioread(CPUState *env, target_ulong pc, hwaddr addr, uint32_t size, uint64_t *val) {
     static int fd = -1;
     if (fd == -1) fd = open("/dev/urandom", O_RDONLY);
@@ -48,14 +61,10 @@ static void ioread(CPUState *env, target_ulong pc, hwaddr addr, uint32_t size, u
     else {
         assert(read(fd, val, sizeof(*val)) > 0);
     }
+    if (ioreplay_debug) 
+        printf("IO READ pc=" TARGET_FMT_lx " addr=%08" HWADDR_PRIx " size %u val=%08" PRIx64 "\n",
+            pc, addr, size, *val);
 }
-
-bool interrupt = false;
-uint64_t bb_counter = 0;
-const char *memfile;
-const char *cpufile;
-uint64_t num_blocks = 0;
-uint32_t start;
 
 static int before_block_exec(CPUState *env, TranslationBlock *tb) {
     num_blocks++;
@@ -69,7 +78,9 @@ void after_machine_init(CPUState *env) {
     //printf("TB: " TARGET_FMT_lx "\n", tb->pc);
     load_states(env, memfile, cpufile);
     //printf("Enabling taint at pc=" TARGET_FMT_lx "\n", tb->pc);
-    if (interrupt) cpu_interrupt(env, CPU_INTERRUPT_HARD);
+    if (interrupt)
+        cpu_interrupt(env, CPU_INTERRUPT_HARD |
+            (fiq ? CPU_INTERRUPT_FIQ : 0));
 }
 
 bool init_plugin(void *self) {
@@ -86,6 +97,8 @@ bool init_plugin(void *self) {
     memfile = panda_parse_string(args, "mem", "mem");
     cpufile = panda_parse_string(args, "cpu", "cpu");
     interrupt = panda_parse_bool(args, "interrupt");
+    fiq = panda_parse_bool(args, "fiq");
+    ioreplay_debug = panda_parse_bool(args, "debug");
 
     panda_cb pcb = { .unassigned_io_read = ioread };
     panda_register_callback(self, PANDA_CB_UNASSIGNED_IO_READ, pcb);
