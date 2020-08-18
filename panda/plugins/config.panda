@@ -23,3 +23,5 @@ iotaint
 loadstate
 unigrams
 textprinter
+printcalls
+printhandler

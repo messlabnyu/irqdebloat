@@ -48,8 +48,8 @@ void load_states(CPUState *env, const char *memfile, const char *cpufile) {
     envp->cp15.hcr_el2 = cpuregs["cp15.hcr_el2"].as<uint32_t>();
     printf("uncached_cpsr = %#x\n", cpuregs["uncached_cpsr"].as<uint32_t>());
     envp->uncached_cpsr = cpuregs["uncached_cpsr"].as<uint32_t>();
-    printf("features = %#lx\n", cpuregs["features"].as<uint64_t>());
-    envp->features = cpuregs["features"].as<uint64_t>();
+    //printf("features = %#lx\n", cpuregs["features"].as<uint64_t>());
+    //envp->features = cpuregs["features"].as<uint64_t>();
     printf("spsr = %#x\n", cpuregs["spsr"].as<uint32_t>());
     envp->spsr = cpuregs["spsr"].as<uint32_t>();
 

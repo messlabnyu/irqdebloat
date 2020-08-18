@@ -1,0 +1,246 @@
+CRn,Op1,CRm,Op2,Register or operation,Security state (NS),Security state (S),Reset value,Page
+c0,0,c0,"{0, 4, 6-7}",Main ID,RO,RO,0x413FC080,"c0, Main ID Register"
+c0,0,c0,1,Cache Type,RO,RO,0x80048004[1],"c0, Cache Type Register"
+c0,0,c0,2,TCM Type,RO,RO,0x00000000,"c0, TCM Type Register"
+c0,0,c0,3,TLB Type,RO,RO,0x00202001,"c0, TLB Type Register"
+c0,0,c0,5,Multiprocessor ID,RO,RO,0x00000000,"c0, Multiprocessor ID Register"
+c0,0,c1,0,Processor Feature 0,RO,RO,0x00001031,"c0, Processor Feature Register 0"
+c0,0,c1,1,Processor Feature 1,RO,RO,0x00000011,"c0, Processor Feature Register 1"
+c0,0,c1,2,Debug Feature 0,RO,RO,0x00010400 or 0x00000400,"c0, Debug Feature Register 0"
+c0,0,c1,3,Auxiliary Feature 0,RO,RO,0x00000000,"c0, Auxiliary Feature Register 0"
+c0,0,c1,4,Memory Model Feature 0,RO,RO,0x31100003,"c0, Memory Model Feature Register 0"
+c0,0,c1,5,Memory Model Feature 1,RO,RO,0x20000000,"c0, Memory Model Feature Register 1"
+c0,0,c1,6,Memory Model Feature 2,RO,RO,0x01202000,"c0, Memory Model Feature Register 2"
+c0,0,c1,7,Memory Model Feature 3,RO,RO,0x00000011,"c0, Memory Model Feature Register 3"
+c0,0,c2,0,Instruction Set Attribute 0,RO,RO,0x00101111,"c0, Instruction Set Attributes Register 0"
+c0,0,c2,1,Instruction Set Attribute 1,RO,RO,0x12112111,"c0, Instruction Set Attributes Register 1"
+c0,0,c2,2,Instruction Set Attribute 2,RO,RO,0x21232031,"c0, Instruction Set Attributes Register 2"
+c0,0,c2,3,Instruction Set Attribute 3,RO,RO,0x11112131,"c0, Instruction Set Attributes Register 3"
+c0,0,c2,4,Instruction Set Attribute 4,RO,RO,0x00011142,"c0, Instruction Set Attributes Register 4"
+c0,0,c2,5-7,Instruction Set Attribute 5-7,RO,RO,0x00000000,"c0, Instruction Set Attributes Registers 5-7"
+c0,0,c3-c7,0-7,Reserved for Feature ID Registers,RO,RO,0x00000000,-
+c0,0,c8-c15,0-7,Undefined,-,-,-,-
+c0,1,c0,0,Cache Size Identification,RO,RO,Unpredictable,"c0, Cache Size Identification Registers"
+c0,1,c0,1,Cache Level ID,RO,RO,0x0A000023 or 0x0A000003,"c0, Cache Level ID Register"
+c0,1,c0,2-6,Undefined,-,-,-,-
+c0,1,c0,7,Silicon ID,RO,RO,[2],"c0, Silicon ID Register"
+c0,1,c1-c15,0-7,Undefined,-,-,-,-
+c0,2,c0,0,Cache Size Selection,R/W,"R/W, B",Unpredictable,"c0, Cache Size Selection Register"
+c0,2,c0,1-7,Undefined,-,-,-,-
+c0,2,c1-c15,0-7,Undefined,-,-,-,-
+c0,3-7,c0-c15,0-7,Undefined,-,-,-,-
+c1,0,c0,0,Control,R/W,"R/W, B[3], X",0x00C50078[4],"c1, Control Register"
+c1,0,c0,1,Auxiliary Control,B,B,0x00000002,"c1, Auxiliary Control Register"
+c1,0,c0,2,Coprocessor Access Control,R/W,R/W,0x00000000,"c1, Coprocessor Access Control Register"
+c1,0,c0,3-7,Undefined,-,-,-,-
+c1,0,c1,0,Secure Configuration,NA,R/W,0x00000000,"c1, Secure Configuration Register"
+c1,0,c1,1,Secure Debug Enable,NA,R/W,0x00000000,"c1, Secure Debug Enable Register"
+c1,0,c1,2,Nonsecure Access Control,RO,R/W,0x00000000,"c1, Nonsecure Access Control Register"
+c1,0,c1,3-7,Undefined,-,-,-,-
+c1,0,c2-c15,0-7,Undefined,-,-,-,-
+c1,1-7,c0-c15,0-7,Undefined,-,-,-,-
+c2,0,c0,0,Translation Table Base 0,R/W,"R/W, B, X",Unpredictable,"c2, Translation Table Base Register 0"
+c2,0,c0,1,Translation Table Base 1,R/W,"R/W, B",Unpredictable,"c2, Translation Table Base Register 1"
+c2,0,c0,2,Translation Table Base Control,R/W,"R/W, B, X",Unpredictable,"c2, Translation Table Base Control Register"
+c2,0,c0,3-7,Undefined,-,-,-,-
+c2,0,c1-c15,0-7,Undefined,-,-,-,-
+c2,1-7,c0-c15,0-7,Undefined,-,-,-,-
+c3,0,c0,0,Domain Access Control,R/W,"R/W, B, X",Unpredictable,"c3, Domain Access Control Register"
+c3,0,c0,1-7,Undefined,-,-,-,-
+c3,0,c1-c15,0-7,Undefined,-,-,-,-
+c3,1-7,c0-c15,0-7,Undefined,-,-,-,-
+c4,0-7,c0-c15,0-7,Undefined,-,-,-,-
+c5,0,c0,0,Data Fault Status,R/W,"R/W, B",Unpredictable,"c5, Data Fault Status Register"
+c5,0,c0,1,Instruction Fault Status,R/W,"R/W, B",Unpredictable,"c5, Instruction Fault Status Register"
+c5,0,c0,2-7,Undefined,-,-,-,-
+c5,0,c1,0,Data Auxiliary Fault Status,R/W,"R/W, B",Unpredictable,"c5, Auxiliary Fault Status Registers"
+c5,0,c1,1,Instruction Auxiliary Fault Status,R/W,"R/W, B",Unpredictable,"c5, Auxiliary Fault Status Registers"
+c5,0,c1,2-7,Undefined,-,-,-,-
+c5,0,c2-c15,0-7,Undefined,-,-,-,-
+c5,1-7,c0-c15,0-7,Undefined,-,-,-,-
+c6,0,c0,0,Data Fault Address,R/W,"R/W, B",Unpredictable,"c6, Data Fault Address Register"
+c6,0,c0,1,Undefined,-,-,-,-
+c6,0,c0,2,Instruction Fault Address,R/W,"R/W, B",Unpredictable,"c6, Instruction Fault Address Register"
+c6,0,c0,3-7,Undefined,-,-,-,-
+c6,0,c1-c15,0-7,Undefined,-,-,-,-
+c6,1-7,c0-c15,0-7,Undefined,-,-,-,-
+c7,0,c0,0-3,Undefined,-,-,-,-
+c7,0,c0,4,NOP (WFI),WO,WO,-,About the system control coprocessor
+c7,0,c0,5-7,Undefined,-,-,-,-
+c7,0,c1-c3,0-7,Undefined,-,-,-,-
+c7,0,c4,0,Physical Address,R/W,"R/W, B",0x00000000,PA Register
+c7,0,c4,1-7,Undefined,-,-,-,-
+c7,0,c5,0,Invalidate all instruction caches to point of unification,WO,WO,-,"c7, Cache operations"
+c7,0,c5,1,Invalidate instruction cache line to point of unification,WO,WO,-,"c7, Cache operations"
+c7,0,c5,2-3,Undefined,-,-,-,-
+c7,0,c5,4,Flush Prefetch Buffer,WO,WO,-,"c7, Cache operations"
+c7,0,c5,5,Undefined,-,-,-,-
+c7,0,c5,6,NOP (Invalidate entire branch predictor array),WO,WO,-,About the system control coprocessor
+c7,0,c5,7,NOP (Invalidate branch predictor array line by MVA),WO,WO,-,About the system control coprocessor
+c7,0,c6,0,Undefined,-,-,-,-
+c7,0,c6,1,Invalidate data cache line to point of coherency by MVA,WO,WO,-,"c7, Cache operations"
+c7,0,c6,2,Invalidate data cache line by set and way,WO,WO,-,"c7, Cache operations"
+c7,0,c6,3-7,Undefined,-,-,-,-
+c7,0,c7,0-7,Undefined,-,-,-,-
+c7,0,c8,0-3,VA to PA translation in the current state,WO,WO,-, VA to PA translation in the current Secure or Nonsecure state
+c7,0,c8,4-7,VA to PA translation in the other state,NA,WO,-,VA to PA translation in the other Secure or Nonsecure state
+c7,0,c9,0-7,Undefined,-,-,-,-
+c7,0,c10,0,Undefined,-,-,-,-
+c7,0,c10,1,Clean data cache line to point of coherency by MVA,WO,WO,-,"c7, Cache operations"
+c7,0,c10,2,Clean data cache line by set and way,WO,WO,-,"c7, Cache operations"
+c7,0,c10,3,Undefined,-,-,-,-
+c7,0,c10,4,Data Synchronization Barrier,WO,WO,-,Data synchronization barrier operation
+c7,0,c10,5,Data Memory Barrier,WO,WO,-,Data memory barrier operation
+c7,0,c10,6-7,Undefined,-,-,-,-
+c7,0,c11,0,Undefined,-,-,-,-
+c7,0,c11,1,Clean data cache line to point of unification by MVA,WO,WO,-,"c7, Cache operations"
+c7,0,c11,2-7,Undefined,-,-,-,-
+c7,0,c12-c13,0-7,Undefined,-,-,-,-
+c7,0,c14,0,Undefined,-,-,-,-
+c7,0,c14,1,Clean and invalidate data cache line to point of coherency by MVA,WO,WO,-,"c7, Cache operations"
+c7,0,c14,2,Clean and invalidate data cache line by set and way,WO,WO,-,"c7, Cache operations"
+c7,0,c14,3-7,Undefined,-,-,-,-
+c7,0,c15,0-7,Undefined,-,-,-,-
+c7,1-7,c0-c15,0-7,Undefined,-,-,-,-
+c8,0,c0-c4,0-7,Undefined,-,-,-,-
+c8,0,c5,0,Invalidate Instruction TLB unlocked entries,WO,"WO, B",-,"c8, TLB operations"
+c8,0,c5,1,Invalidate Instruction TLB entry by MVA,WO,"WO, B",-,"c8, TLB operations"
+c8,0,c5,2,Invalidate Instruction TLB entry on ASID match,WO,"WO, B",-,"c8, TLB operations"
+c8,0,c5,3-7,Undefined,-,-,-,-
+c8,0,c6,0,Invalidate Data TLB unlocked entries,WO,"WO, B",-,"c8, TLB operations"
+c8,0,c6,1,Invalidate Data TLB entry by MVA,WO,"WO, B",-,"c8, TLB operations"
+c8,0,c6,2,Invalidate Data TLB entry on ASID match,WO,"WO, B",-,"c8, TLB operations"
+c8,0,c6,3-7,Undefined,-,-,-,-
+c8,0,c7,0,Invalidate unified TLB unlocked entries,WO,"WO, B",-,"c8, TLB operations"
+c8,0,c7,1,Invalidate unified TLB entry by MVA,WO,"WO, B",-,"c8, TLB operations"
+c8,0,c7,2,Invalidate unified TLB entry on ASID match,WO,"WO, B",-,"c8, TLB operations"
+c8,0,c7,3-7,Undefined,-,-,-,-
+c8,0,c8-c15,0-7,Undefined,-,-,-,-
+c8,1-7,c0-c15,0-7,Undefined,-,-,-,-
+c9,0,c0-c11,0-7,Undefined,-,-,-,-
+c9,0,c12,0,Performance Monitor Control,"R/W, X","R/W, X",0x41002000,"c9, Performance Monitor Control Register"
+c9,0,c12,1,Count Enable Set,"R/W, X","R/W, X",0x00000000,"c9, Count Enable Set Register"
+c9,0,c12,2,Count Enable Clear,"R/W, X","R/W, X",0x00000000,"c9, Count Enable Clear Register"
+c9,0,c12,3,Overflow Flag Status,"R/W, X","R/W, X",0x00000000,"c9, Overflow Flag Status Register"
+c9,0,c12,4,Software Increment,"R/W, X","R/W, X",0x00000000,"c9, Software Increment Register"
+c9,0,c12,5,Performance Counter Selection,"R/W, X","R/W, X",Unpredictable,"c9, Performance Counter Selection Register"
+c9,0,c12,6-7,Undefined,-,-,-,-
+c9,0,c13,0,Cycle Count,"R/W, X","R/W, X",0x00000000,"c9, Cycle Count Register"
+c9,0,c13,1,Event Selection,"R/W, X","R/W, X",Unpredictable,"c9, Event Selection Register"
+c9,0,c13,2,Performance Monitor Count,"R/W, X","R/W, X",0x00000000,"c9, Performance Monitor Count Registers"
+c9,0,c13,3-7,Undefined,-,-,-,-
+c9,0,c14,0,User Enable,R/W,R/W,0x00000000,"c9, User Enable Register"
+c9,0,c14,1,Interrupt Enable Set,R/W,R/W,0x00000000,"c9, Interrupt Enable Set Register"
+c9,0,c14,2,Interrupt Enable Clear,R/W,R/W,0x00000000,"c9, Interrupt Enable Clear Register"
+c9,0,c14,3-7,Undefined,-,-,-,-
+c9,0,c15,0-7,Undefined,-,-,-,-
+c9,1,c0,0,L2 Cache Lockdown,R/W,R/W,0x00000000,"c9, L2 Cache Lockdown Register"
+c9,1,c0,1,Undefined,-,-,-,-
+c9,1,c0,2,L2 Cache Auxiliary Control,RO,R/W,0x00000042,"c9, L2 Cache Auxiliary Control Register"
+c9,1,c0,3-7,Undefined,-,-,-,-
+c9,1,c1-c15,0-7,Undefined,-,-,-,-
+c9,2-7,c0-c15,0-7,Undefined,-,-,-,-
+c10,0,c0,0,Data TLB Lockdown Register,R/W,R/W,0x00000000,"c10, TLB Lockdown Registers"
+c10,0,c0,1,Instruction TLB Lockdown Register,R/W,R/W,0x00000000,"c10, TLB Lockdown Registers"
+c10,0,c0,2-7,Undefined,-,-,-,-
+c10,0,c1,0,Data TLB Preload,WO,WO,-,"c10, TLB preload operation"
+c10,0,c1,1,Instruction TLB Preload,WO,WO,-,"c10, TLB preload operation"
+c10,0,c1,2-7,Undefined,-,-,-,-
+c10,0,c2,0,Primary Region Remap Register,R/W,"R/W, B, X",0x00098AA4,"c10, Memory Region Remap Registers"
+c10,0,c2,1,Normal Memory Remap Register,R/W,"R/W, B, X",0x44E048E0,"c10, Memory Region Remap Registers"
+c10,0,c2,2-7,Undefined,-,-,-,-
+c10,0,c3-c15,0-7,Undefined,-,-,-,-
+c10,1-7,c0-c15,0-7,Undefined,-,-,-,-
+c11,0,c0,0,PLE Identification and Status,"RO, X",RO,0x00000003[5],"c11, PLE Identification and Status Registers"
+c11,0,c0,1,Undefined,-,-,-,-
+c11,0,c0,2-3,PLE Identification and Status,"RO, X",RO,0x00000000e,"c11, PLE Identification and Status Registers"
+c11,0,c0,4-7,Undefined,-,-,-,-
+c11,0,c1,0,PLE User Accessibility,"R/W, X",R/W,0x00000000,"c11, PLE User Accessibility Register"
+c11,0,c1,1-7,Undefined,-,-,-,-
+c11,0,c2,0,PLE Channel Number,"R/W, X","R/W, X",Unpredictable,"c11, PLE Channel Number Register"
+c11,0,c2,1-7,Undefined,-,-,-,-
+c11,0,c3,0-2,PLE enable,"WO, X","WO, X",-,"c11, PLE enable commands"
+c11,0,c3,3-7,Undefined,-,-,-,-
+c11,0,c4,0,PLE Control,"R/W, X","R/W, X",Unpredictable,"c11, PLE Control Register"
+c11,0,c4,1-7,Undefined,-,-,-,-
+c11,0,c5,0,PLE Internal Start Address,"R/W, X","R/W, X",Unpredictable,"c11, PLE Internal Start Address Register"
+c11,0,c5,1-7,Undefined,-,-,-,-
+c11,0,c6,0-7,Undefined,-,-,-,-
+c11,0,c7,0,PLE Internal End Address,"R/W, X","R/W, X",Unpredictable,"c11, PLE Internal End Address Register"
+c11,0,c7,1-7,Undefined,-,-,-,-
+c11,0,c8,0,PLE Channel Status,"RO, X","RO, X",0x00000000,"c11, PLE Channel Status Register"
+c11,0,c8,1-7,Undefined,-,-,-,-
+c11,0,c9-14,0-7,Undefined,-,-,-,-
+c11,0,c15,0,PLE Context ID,"R/W, X",R/W,Unpredictable,"c11, PLE Context ID Register"
+c11,0,c15,1-7,Undefined,-,-,-,-
+c11,1-7,c0-c15,0-7,Undefined,-,-,-,-
+c12,0,c0,0,Secure or Nonsecure Vector Base Address,R/W,"R/W, B, X",0x00000000," c12, Secure or Nonsecure Vector Base Address Register"
+c12,0,c0,1,Monitor Vector Base Address,NA,"R/W, X",0x00000000,"c12, Monitor Vector Base Address Register"
+c12,0,c0,2-7,Undefined,-,-,-,-
+c12,0,c1,0,Interrupt Status,RO,RO,0x00000000[6],"c12, Interrupt Status Register"
+c12,0,c1,1-7,Undefined,-,-,-,-
+c12,0,c2-15,0-7,Undefined,-,-,-,-
+c12,1-7,c0-15,0-7,Undefined,-,-,-,-
+c13,0,c0,0,FCSE PID,R/W,"R/W, B, X",0x00000000,"c13, FCSE PID Register"
+c13,0,c0,1,Context ID,R/W,"R/W, B",Unpredictable,"c13, Context ID Register"
+c13,0,c0,2,User read/write Thread and Process ID,R/W,"R/W, B",Unpredictable,"c13, Thread and Process ID Registers"
+c13,0,c0,3,User read-only Thread and Process ID,"R/W, RO","R/W, RO, B[7]",Unpredictable,"c13, Thread and Process ID Registers"
+c13,0,c0,4,Privileged only Thread and Process ID,R/W,"R/W, B",Unpredictable,"c13, Thread and Process ID Registers"
+c13,0,c0,5-7,Undefined,-,-,-,-
+c13,0,c1-c15,0-7,Undefined,-,-,-,-
+c13,1-7,c0-c15,0-7,Undefined,-,-,-,-
+c14,0-7,c0-c15,0-7,Undefined,-,-,-,-
+c15,0,c0,0,D-L1 Data 0 Register,NA,R/W,Unpredictable,"c15, L1 system array debug data registers"
+c15,0,c0,1,D-L1 Data 1 Register,NA,R/W,Unpredictable,"c15, L1 system array debug data registers"
+c15,0,c0,2,D-TLB CAM write operation,NA,WO,-,"c15, L1 TLB operations"
+c15,0,c0,3,D-TLB ATTR write operation,NA,WO,-,"c15, L1 TLB operations"
+c15,0,c0,4,D-TLB PA write operation,NA,WO,-,"c15, L1 TLB operations"
+c15,0,c0,5,D-HVAB write operation,NA,WO,-,"c15, L1 HVAB array operations"
+c15,0,c0,6,D-Tag write operation,NA,WO,-,"c15, L1 tag array operations"
+c15,0,c0,7,D-Data write operation,NA,WO,-,"c15, L1 data array operations"
+c15,0,c1,0,I-L1 Data 0 Register,NA,R/W,Unpredictable,"c15, L1 system array debug data registers"
+c15,0,c1,1,I-L1 Data 1 Register,NA,R/W,Unpredictable,"c15, L1 system array debug data registers"
+c15,0,c1,2,I-TLB CAM write operation,NA,WO,-,"c15, L1 TLB operations"
+c15,0,c1,3,I-TLB ATTR write operation,NA,WO,-,"c15, L1 TLB operations"
+c15,0,c1,4,I-TLB PA write operation,NA,WO,-,"c15, L1 TLB operations"
+c15,0,c1,5,I-HVAB write operation,NA,WO,-,"c15, L1 HVAB array operations"
+c15,0,c1,6,I-Tag write operation,NA,WO,-,"c15, L1 tag array operations"
+c15,0,c1,7,I-Data write operation,NA,WO,-,"c15, L1 data array operations"
+c15,0,c2,0-1,Undefined,-,-,-,-
+c15,0,c2,2,D-TLB CAM read operation,NA,WO,-,"c15, L1 TLB operations"
+c15,0,c2,3,D-TLB ATTR read operation,NA,WO,-,"c15, L1 TLB operations"
+c15,0,c2,4,D-TLB PA read operation,NA,WO,-,"c15, L1 TLB operations"
+c15,0,c2,5,D-HVAB read operation,NA,WO,-,"c15, L1 HVAB array operations"
+c15,0,c2,6,D-Tag read operation,NA,WO,-,"c15, L1 tag array operations"
+c15,0,c2,7,D-Data read operation,NA,WO,-,"c15, L1 data array operations"
+c15,0,c3,0-1,Undefined,NA,-,-,-
+c15,0,c3,2,I-TLB CAM read operation,NA,WO,-,"c15, L1 TLB operations"
+c15,0,c3,3,I-TLB ATTR read operation,NA,WO,-,"c15, L1 TLB operations"
+c15,0,c3,4,I-TLB PA read operation,NA,WO,-,"c15, L1 TLB operations"
+c15,0,c3,5,I-HVAB read operation,NA,WO,-,"c15, L1 HVAB array operations"
+c15,0,c3,6,I-Tag read operation,NA,WO,-,"c15, L1 tag array operations"
+c15,0,c3,7,I-Data read operation,NA,WO,-,"c15, L1 data array operations"
+c15,0,c4,0-7,Undefined,-,-,-,-
+c15,0,c5,0-1,Undefined,-,-,-,-
+c15,0,c5,2,GHB write operation,NA,WO,-,"c15, GHB array operations"
+c15,0,c5,3,BTB write operation,NA,WO,-,"c15, BTB array operations"
+c15,0,c5,4-7,Undefined,-,-,-,-
+c15,0,c6,0-7,Undefined,-,-,-,-
+c15,0,c7,0-1,Undefined,-,-,-,-
+c15,0,c7,2,GHB read operation,NA,WO,-,"c15, GHB array operations"
+c15,0,c7,3,BTB read operation,NA,WO,-,"c15, BTB array operations"
+c15,0,c7,4-7,Undefined,-,-,-,-
+c15,0,c8,0,L2 Data 0 Register,NA,R/W,Unpredictable,"c15, L2 system array debug data registers"
+c15,0,c8,1,L2 Data 1 Register,NA,R/W,Unpredictable,"c15, L2 system array debug data registers"
+c15,0,c8,2,"L2 tag, L2 valid write operation",NA,WO,-,"c15, L2 tag array operations"
+c15,0,c8,3,"L2 data, L2 dirty write operation",NA,WO,-,"c15, L2 tag array operations"
+c15,0,c8,4,L2 parity and ECC write operation,NA,WO,-,"c15, L2 parity/ECC array operations"
+c15,0,c8,5,L2 Data 2 Register,NA,R/W,Unpredictable,"c15, L2 system array debug data registers"
+c15,0,c8,6-7,Undefined,-,-,-,-
+c15,0,c9,0-1,Undefined,-,-,-,-
+c15,0,c9,2,"L2 tag, L2 valid read operation",NA,WO,-,"c15, L2 tag array operations"
+c15,0,c9,3,"L2 data, L2 dirty read operation",NA,WO,-,"c15, L2 tag array operations"
+c15,0,c9,4,L2 parity and ECC read operation,NA,WO,-,"c15, L2 parity/ECC array operations"
+c15,0,c9,5-7,Undefined,-,-,-,-
+c15,0,c10-c15,0-7,Undefined,-,-,-,-
+c15,1-7,c0-c15,0-7,Undefined,-,-,-,-

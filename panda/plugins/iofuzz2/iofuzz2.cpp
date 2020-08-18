@@ -244,16 +244,16 @@ int start_child(CPUState *env) {
     }
 }
 
+// Well-known constants
 void genconst(std::vector<uint64_t> &prefix, std::deque<std::vector<uint64_t>> &out) {
-    // Well-known constants
     out.push_back(prefix); out.back().push_back(0x0L);
     out.push_back(prefix); out.back().push_back(0xffffffffffffffffL);
     out.push_back(prefix); out.back().push_back(0x0f0f0f0f0f0f0f0fL);
     out.push_back(prefix); out.back().push_back(0xf0f0f0f0f0f0f0f0L);
 }
 
+// Sliding windows of bits
 void genwin(std::vector<uint64_t> &prefix, std::deque<std::vector<uint64_t>> &out) {
-    // Sliding windows
     for (int i = 1; i <= 16; i++) {
         for (int j = 0; j < 32-i+1; j++) {
             out.push_back(prefix); out.back().push_back(((1L << i) - 1) << j);
@@ -261,12 +261,20 @@ void genwin(std::vector<uint64_t> &prefix, std::deque<std::vector<uint64_t>> &ou
     }
 }
 
+// Random values
 void genrand(std::vector<uint64_t> &prefix, std::deque<std::vector<uint64_t>> &out) {
     int fd = open("/dev/urandom", O_RDONLY);
-    for (int i = 0; i < 16; i++) {
+    for (int i = 0; i < 1024; i++) {
         uint64_t rv;
         read(fd,&rv,sizeof(rv));
         out.push_back(prefix); out.back().push_back(rv);
+    }
+}
+
+// Integers up to 256
+void genint(std::vector<uint64_t> &prefix, std::deque<std::vector<uint64_t>> &out) {
+    for (uint64_t i = 0; i < 256; i++) {
+        out.push_back(prefix); out.back().push_back(i);
     }
 }
 
@@ -323,8 +331,8 @@ static int before_block_exec(CPUState *env, TranslationBlock *tb) {
             for (auto s : seeds) {
                 genconst(s, new_seeds);
                 genwin(s, new_seeds);
-                //if (generation > 3)
                 genrand(s, new_seeds);
+                genint(s, new_seeds);
             }
 
             for (int c = 0; c < nr_cpu; c++) {
