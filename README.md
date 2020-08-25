@@ -50,7 +50,7 @@ To collect registers, attach to the QEMU process with `gdb`, and then source `gd
 
 Connect to the target using OpenOCD and halt it. Then source `jtag_scripts/cpregs.tcl` to dump the CPU registers, and run `jtag_scripts/genyaml.py` to convert them into a valid YAML file for use with `irqfuzzer`.
 
-To capture RAM, you can use the `dump_memory` command in OpenOCD. Note that by default this uses virtual addresses; however, you can patch OpenOCD to use physical addresses instead by applying the following patch (assuming a Cortex-A target):
+To capture RAM, you can use the `dump_image` command in OpenOCD. Note that by default this uses virtual addresses; however, you can patch OpenOCD to use physical addresses instead by applying the following patch (assuming a Cortex-A target):
 
 ```diff
 diff --git a/src/target/cortex_a.c b/src/target/cortex_a.c
