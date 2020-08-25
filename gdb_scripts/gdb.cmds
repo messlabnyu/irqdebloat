@@ -1,0 +1,34 @@
+set $env = (struct CPUARMState *)cpus->tqh_first->env_ptr
+set print repeats unlimited
+printf "regs:\n"
+p/x $env->regs
+printf "daif:\n"
+p/x $env->daif
+printf "cp15.scr_el3:\n"
+p/x $env->cp15.scr_el3
+printf "cp15.hcr_el2:\n"
+p/x $env->cp15.hcr_el2
+printf "cp15.dacr_ns:\n"
+p/x $env->cp15.dacr_ns
+printf "cp15.dacr_s:\n"
+p/x $env->cp15.dacr_s
+printf "cp15.ttbr0_el:\n"
+p/x $env->cp15.ttbr0_el
+printf "cp15.ttbr1_el:\n"
+p/x $env->cp15.ttbr1_el
+printf "cp15.sctlr_el:\n"
+p/x $env->cp15.sctlr_el
+printf "cp15.vbar_el:\n"
+p/x $env->cp15.vbar_el
+printf "uncached_cpsr:\n"
+p/x $env->uncached_cpsr
+printf "features:\n"
+p/x $env->features
+printf "spsr:\n"
+p/x $env->spsr
+printf "banked_spsr:\n"
+p/x $env->banked_spsr
+printf "banked_r13:\n"
+p/x $env->banked_r13
+printf "banked_r14:\n"
+p/x $env->banked_r14

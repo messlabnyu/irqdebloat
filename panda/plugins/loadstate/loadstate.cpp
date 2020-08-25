@@ -15,18 +15,27 @@ PANDAENDCOMMENT */
 // the PRIx64 macro
 #define __STDC_FORMAT_MACROS
 
-#include "panda/plugin.h"
 #include <yaml-cpp/yaml.h>
 #include <iostream>
 
 extern "C" {
 
+#include "panda/plugin.h"
 #include "loadstate_int_fns.h"
 
 bool init_plugin(void *);
 void uninit_plugin(void *);
 
 }
+
+// UGH this is only defined in exec.c (used via a typedef elsewhere)
+// recreate it here and NEVER PULL AGAIN
+struct CPUAddressSpace {                         
+    void *cpu;                               
+    void *as;                            
+    void *memory_dispatch;
+    MemoryListener tcg_as_listener;
+};
 
 void load_states(CPUState *env, const char *memfile, const char *cpufile) {
 #ifdef TARGET_ARM
@@ -48,8 +57,10 @@ void load_states(CPUState *env, const char *memfile, const char *cpufile) {
     envp->cp15.hcr_el2 = cpuregs["cp15.hcr_el2"].as<uint32_t>();
     printf("uncached_cpsr = %#x\n", cpuregs["uncached_cpsr"].as<uint32_t>());
     envp->uncached_cpsr = cpuregs["uncached_cpsr"].as<uint32_t>();
-    //printf("features = %#lx\n", cpuregs["features"].as<uint64_t>());
-    //envp->features = cpuregs["features"].as<uint64_t>();
+    if (cpuregs["features"]) {
+        printf("features = %#lx\n", cpuregs["features"].as<uint64_t>());
+        envp->features = cpuregs["features"].as<uint64_t>();
+    }
     printf("spsr = %#x\n", cpuregs["spsr"].as<uint32_t>());
     envp->spsr = cpuregs["spsr"].as<uint32_t>();
 
@@ -101,6 +112,11 @@ void load_states(CPUState *env, const char *memfile, const char *cpufile) {
         envp->banked_r14[i] = cpuregs["banked_r14"][i].as<uint32_t>();
     }
     printf("}\n");
+
+    // Extremely gross but let's force the secure and non-secure AS
+    // to have the same memory dispatcher
+    if (env->num_ases > 1)
+        env->cpu_ases[0].memory_dispatch = env->cpu_ases[1].memory_dispatch;
 
     //LOAD MEM
     FILE *fp_mem;

@@ -499,7 +499,7 @@ typedef struct CPUARMState {
     struct CPUWatchpoint *cpu_watchpoint[16];
 
     /* Fields up to this point are cleared by a CPU reset */
-    struct {} end_reset_fields;
+    struct {char x;} end_reset_fields;
 
     CPU_COMMON
 

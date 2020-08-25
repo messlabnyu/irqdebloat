@@ -48,7 +48,7 @@ static int before_block_exec(CPUState *cpu, TranslationBlock *tb) {
     panda_virtual_memory_read(cpu, irq_action_ptr, (uint8_t *)&action, sizeof(target_ulong));
     fprintf(outf, "Found irq_desc at " TARGET_FMT_lx " irqaction " TARGET_FMT_lx " action " TARGET_FMT_lx "\n",
         irq_desc_ptr, irq_action_ptr, action);
-    //exit(0);
+    exit(0);
 #endif
     return 0;
 }

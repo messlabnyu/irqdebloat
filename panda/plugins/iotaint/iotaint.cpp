@@ -63,8 +63,23 @@ static void ioread(CPUState *env, target_ulong pc, hwaddr addr, uint32_t size, u
     }
 }
 
+const char *addrtype_strings[ADDR_LAST] = {
+"HADDR", "MADDR", "IADDR", "PADDR", "LADDR", "GREG", "GSPEC", "UNK", "CONST", "RET"
+};
+
 static void on_tainted_pc(Addr a, uint64_t size) {
-    printf("Saw jump to tainted addr!\n");
+    // count number of tainted bytes on this reg
+    uint32_t num_tainted = 0;
+    Addr ao = a;
+    for (uint32_t o=0; o<size; o++) {
+        ao.off = o;
+        num_tainted += (taint2_query(ao) != 0);
+    }
+    CPUState *cpu = first_cpu;
+    target_ulong asid = panda_current_asid(cpu);
+    target_ulong pc = panda_current_pc(cpu);
+    printf("Saw jump to tainted addr: " TARGET_FMT_lx " ASID: " TARGET_FMT_lx "\n", 
+            pc, asid);
 }
 
 bool interrupt = false;

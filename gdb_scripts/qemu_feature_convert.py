@@ -1,0 +1,108 @@
+import sys
+
+qemu_4_2_1 = dict([(v,k) for k,v in enumerate([
+    "ARM_FEATURE_VFP",
+    "ARM_FEATURE_AUXCR",
+    "ARM_FEATURE_XSCALE",
+    "ARM_FEATURE_IWMMXT",
+    "ARM_FEATURE_V6",
+    "ARM_FEATURE_V6K",
+    "ARM_FEATURE_V7",
+    "ARM_FEATURE_THUMB2",
+    "ARM_FEATURE_PMSA",
+    "ARM_FEATURE_VFP3",
+    "ARM_FEATURE_NEON",
+    "ARM_FEATURE_M",
+    "ARM_FEATURE_OMAPCP",
+    "ARM_FEATURE_THUMB2EE",
+    "ARM_FEATURE_V7MP",
+    "ARM_FEATURE_V7VE",
+    "ARM_FEATURE_V4T",
+    "ARM_FEATURE_V5",
+    "ARM_FEATURE_STRONGARM",
+    "ARM_FEATURE_VAPA",
+    "ARM_FEATURE_VFP4",
+    "ARM_FEATURE_GENERIC_TIMER",
+    "ARM_FEATURE_MVFR",
+    "ARM_FEATURE_DUMMY_C15_REGS",
+    "ARM_FEATURE_CACHE_TEST_CLEAN",
+    "ARM_FEATURE_CACHE_DIRTY_REG",
+    "ARM_FEATURE_CACHE_BLOCK_OPS",
+    "ARM_FEATURE_MPIDR",
+    "ARM_FEATURE_PXN",
+    "ARM_FEATURE_LPAE",
+    "ARM_FEATURE_V8",
+    "ARM_FEATURE_AARCH64",
+    "ARM_FEATURE_CBAR",
+    "ARM_FEATURE_CRC",
+    "ARM_FEATURE_CBAR_RO",
+    "ARM_FEATURE_EL2",
+    "ARM_FEATURE_EL3",
+    "ARM_FEATURE_THUMB_DSP",
+    "ARM_FEATURE_PMU",
+    "ARM_FEATURE_VBAR",
+    "ARM_FEATURE_M_SECURITY",
+    "ARM_FEATURE_M_MAIN",
+])])
+
+irqfuzzer = dict([(v,k) for k,v in enumerate([
+    "ARM_FEATURE_VFP",
+    "ARM_FEATURE_AUXCR",
+    "ARM_FEATURE_XSCALE",
+    "ARM_FEATURE_IWMMXT",
+    "ARM_FEATURE_V6",
+    "ARM_FEATURE_V6K",
+    "ARM_FEATURE_V7",
+    "ARM_FEATURE_THUMB2",
+    "ARM_FEATURE_MPU",
+    "ARM_FEATURE_VFP3",
+    "ARM_FEATURE_VFP_FP16",
+    "ARM_FEATURE_NEON",
+    "ARM_FEATURE_THUMB_DIV",
+    "ARM_FEATURE_M",
+    "ARM_FEATURE_OMAPCP",
+    "ARM_FEATURE_THUMB2EE",
+    "ARM_FEATURE_V7MP",
+    "ARM_FEATURE_V4T",
+    "ARM_FEATURE_V5",
+    "ARM_FEATURE_STRONGARM",
+    "ARM_FEATURE_VAPA",
+    "ARM_FEATURE_ARM_DIV",
+    "ARM_FEATURE_VFP4",
+    "ARM_FEATURE_GENERIC_TIMER",
+    "ARM_FEATURE_MVFR",
+    "ARM_FEATURE_DUMMY_C15_REGS",
+    "ARM_FEATURE_CACHE_TEST_CLEAN",
+    "ARM_FEATURE_CACHE_DIRTY_REG",
+    "ARM_FEATURE_CACHE_BLOCK_OPS",
+    "ARM_FEATURE_MPIDR",
+    "ARM_FEATURE_PXN",
+    "ARM_FEATURE_LPAE",
+    "ARM_FEATURE_V8",
+    "ARM_FEATURE_AARCH64",
+    "ARM_FEATURE_V8_AES",
+    "ARM_FEATURE_CBAR",
+    "ARM_FEATURE_CRC",
+    "ARM_FEATURE_CBAR_RO",
+    "ARM_FEATURE_EL2",
+    "ARM_FEATURE_EL3",
+    "ARM_FEATURE_V8_SHA1",
+    "ARM_FEATURE_V8_SHA256",
+    "ARM_FEATURE_V8_PMULL",
+    "ARM_FEATURE_THUMB_DSP",
+    "ARM_FEATURE_PMU",
+    "ARM_FEATURE_VBAR",
+])])
+
+featlist = []
+feat = int(sys.argv[1],0)
+out_feat = 0
+for k in qemu_4_2_1:
+    if feat & (1 << qemu_4_2_1[k]):
+        if k in irqfuzzer:
+            out_feat |= (1 << irqfuzzer[k])
+            featlist.append(k)
+        else:
+            print(f"WARNING: feature {k} not found in irqfuzzer")
+
+print(f"{out_feat:#x} ({','.join(featlist)})")
