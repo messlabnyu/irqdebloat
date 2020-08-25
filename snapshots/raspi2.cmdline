@@ -1,1 +1,0 @@
-build/arm-softmmu/qemu-system-arm -machine rehosting,mem-map="MEM 0x00000000-0x3f000000" -panda iofuzz2:mem=raspi2.mem,cpu=raspi2.yaml,timeout=32,ncpu=32 -display none
