@@ -14,7 +14,7 @@ PANDAENDCOMMENT */
 // This needs to be defined before anything is included in order to get
 // the PRIx64 macro
 #define __STDC_FORMAT_MACROS
-#define MAX_BLOCKS 100000
+#define MAX_BLOCKS 1000000
 
 #include "panda/plugin.h"
 #include "panda/plugin_plugin.h"
@@ -40,9 +40,11 @@ uint32_t label_number = 1;
 bool interrupt = false;
 bool fiq = false;
 bool ioreplay_debug = false;
+bool limit_trace = false;
 uint64_t bb_counter = 0;
 const char *memfile;
 const char *cpufile;
+const char *tracedir;
 uint64_t num_blocks = 0;
 uint32_t start;
 
@@ -50,8 +52,21 @@ uint32_t start;
 #define CPU_INTERRUPT_FIQ 0
 #endif
 
+extern "C" {
+#include <qemu/timer.h>
+}
+static uint64_t start_time = 0;
+// 1 minutes
+#define MAX_TRACE_TIMER_MS  (1*60*1000)
+
+#ifdef TARGET_ARM
+static uint32_t prev_cpu_mode = 0;
+static uint64_t trace_count = 0;
+#endif
+
 static void ioread(CPUState *env, target_ulong pc, hwaddr addr, uint32_t size, uint64_t *val) {
     static int fd = -1;
+    CPUArchState *cpu = (CPUArchState *)env->env_ptr;
     if (fd == -1) fd = open("/dev/urandom", O_RDONLY);
     ioaddrs_seen.insert(addr);
     if (!iovals.empty()) {
@@ -61,23 +76,65 @@ static void ioread(CPUState *env, target_ulong pc, hwaddr addr, uint32_t size, u
     else {
         assert(read(fd, val, sizeof(*val)) > 0);
     }
+#ifdef TARGET_ARM
     if (ioreplay_debug) 
         printf("IO READ pc=" TARGET_FMT_lx " addr=%08" HWADDR_PRIx " size %u val=%08" PRIx64 "\n",
-            pc, addr, size, *val);
+            cpu->regs[15], addr, size, *val);
+#endif
 }
 
 static int before_block_exec(CPUState *env, TranslationBlock *tb) {
     num_blocks++;
-    if (num_blocks > MAX_BLOCKS) {
-        printf("Done with ioreplay (max block number exceeded)\n");
-        exit(0);
+    if (limit_trace && qemu_loglevel && num_blocks > MAX_BLOCKS) {
+        printf("Truncate Trace (max block number exceeded)\n");
+        qemu_loglevel = 0;
+        num_blocks = 0;
+        load_states(env, memfile, cpufile);
     }
+#ifdef TARGET_ARM
+    // Cortex-A exception vector:
+    // https://developer.arm.com/documentation/ddi0301/h/programmer-s-model/exceptions/exception-vectors
+    CPUArchState *cpu = (CPUArchState *)env->env_ptr;
+    uint32_t cpu_mode = cpu->uncached_cpsr & CPSR_M;
+    switch (cpu_mode) {
+    case ARM_CPU_MODE_FIQ:
+    case ARM_CPU_MODE_IRQ:
+    case ARM_CPU_MODE_SVC:
+    case ARM_CPU_MODE_ABT:
+        // ignore the very initial exectution
+        if (!prev_cpu_mode) break;
+        // cpu_mode changed to FIQ/IRQ/SVC indicates entering interrupt handling
+        if (cpu_mode^prev_cpu_mode) {
+            fprintf(stderr, "DEBUG [%x] cpsr %x, prev %x\n", cpu->regs[15], cpsr_read(cpu), prev_cpu_mode);
+            qemu_log_flush();
+
+            if (qemu_clock_get_ms(QEMU_CLOCK_REALTIME) - start_time > MAX_TRACE_TIMER_MS) {
+                printf("Done with ioreplay (max time %d ms)\n", MAX_TRACE_TIMER_MS);
+                exit(0);
+            }
+
+            //qemu_loglevel |= CPU_LOG_TB_IN_ASM|CPU_LOG_INT|CPU_LOG_TB_CPU;
+            qemu_loglevel |= CPU_LOG_EXEC|CPU_LOG_TB_NOCHAIN;
+            char *newlog = g_strdup_printf("%s/trace_%lld.log", tracedir, trace_count++);
+            qemu_set_log_filename(newlog, nullptr);
+            qemu_log("cpu mode: %x, prev: %x\n", cpu_mode, prev_cpu_mode);
+            qemu_log("Trace [0: %08x] cpsr %x, prev %x\n", cpu->regs[15], cpsr_read(cpu), prev_cpu_mode);
+
+            num_blocks = 0;
+        }
+        break;
+    default:
+        break;
+    }
+    prev_cpu_mode = cpu_mode;
+#endif
     return 0;
 }
 void after_machine_init(CPUState *env) {
     //printf("TB: " TARGET_FMT_lx "\n", tb->pc);
     load_states(env, memfile, cpufile);
     //printf("Enabling taint at pc=" TARGET_FMT_lx "\n", tb->pc);
+    start_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
     if (interrupt)
         cpu_interrupt(env, CPU_INTERRUPT_HARD |
             (fiq ? CPU_INTERRUPT_FIQ : 0));
@@ -99,6 +156,8 @@ bool init_plugin(void *self) {
     interrupt = panda_parse_bool(args, "interrupt");
     fiq = panda_parse_bool(args, "fiq");
     ioreplay_debug = panda_parse_bool(args, "debug");
+    limit_trace = panda_parse_bool(args, "tracelimit");
+    tracedir = panda_parse_string(args, "tracedir", "../log/trace");
 
     panda_cb pcb = { .unassigned_io_read = ioread };
     panda_register_callback(self, PANDA_CB_UNASSIGNED_IO_READ, pcb);
