@@ -285,6 +285,8 @@ def reprocess_trace(bv, raw_trace, return_blocks):
     while trace_index < len(raw_trace):
         instaddr = raw_trace[trace_index]
         functions = bv.get_functions_containing(instaddr)
+        #print hex(instaddr), " : ", functions
+        #print prev_func
 
         # check if we are at the return addr of the prev_func
         if prev_func:
@@ -305,6 +307,13 @@ def reprocess_trace(bv, raw_trace, return_blocks):
         if func.start == instaddr:
             cur_function = func
         ret_block = func.get_basic_block_at(instaddr)
+        # ughh, just to make sure current trace instr has a basicblock in func
+        func_checklist = [f for f in functions]
+        while func_checklist and not ret_block:
+            func = func_checklist.pop()
+            ret_block = func.get_basic_block_at(instaddr)
+        #print return_blocks[func]
+        #print ret_block
 
         # initialize
         if not prev_func:
@@ -385,8 +394,8 @@ def reprocess_trace(bv, raw_trace, return_blocks):
             prev_bb = inst[2]
         elif inst:
             inst[2] = prev_bb
-            print "Fixing {INST}, {FUNC}, {BB}".format(INST=hex(inst[0]), FUNC=inst[1].name, BB=hex(inst[2].start))
-    return [[tr[0], tr[1], tr[2].start, tr[3]] for tr in scanning_trace if tr]
+            #print "Fixing {INST}, {FUNC}, {BB}".format(INST=hex(inst[0]), FUNC=inst[1].name, BB=hex(inst[2].start))
+    return [[tr[0], tr[1], tr[2].start if tr[2] else None, tr[3]] for tr in scanning_trace if tr]
 
 
 def find_immediate_postdominator(postdoms):
