@@ -345,6 +345,9 @@ def reprocess_trace(bv, raw_trace, return_blocks):
                 if scanning_trace[index] and scanning_trace[index][0] == func.start:
                     break
             scanning_trace.append([instaddr, func, ret_block, ret_block.start])
+            # pop fake trace cb if seen a real return block
+            if fake_trace_cb and fake_trace_cb[0][1].start == instaddr:
+                fake_trace_cb.pop(0)
         # ohh, fuck, this is to fix TCG (basicblock) tracing, TCG bb just goes all the way down as long as there's no
         # PC redirection. However, in normal sense, bb shoudl be splited if there's a jump to the middle of that bb.
         elif ret_block.end in [bb.start for bb in return_blocks[func]]:
