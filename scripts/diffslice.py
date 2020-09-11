@@ -137,7 +137,7 @@ class DiffSliceAnalyzer(object):
         with open(self.outputFile("patch.json"), 'w') as fd:
             json.dump({'locations': [pt for pt in patch_points]}, fd)
 
-    def bn_analyze(self, raw_traces, binfile, outdir):
+    def bn_init(self, binfile):
         bv = BinaryViewType['ELF'].open(binfile)
         bv.store_metadata('ephemeral', {'binaryninja.analysis.max_function_size': 0})
         function_map = {}
@@ -153,14 +153,18 @@ class DiffSliceAnalyzer(object):
             if f in function_map.keys():
                 wait_analyze(bv, function_map[f])
         bv.update_analysis_and_wait()
+        return bv
 
+    def bn_analyze(self, bv, raw_traces, binfile, outdir):
         postdom_out = {}
         trace_out = {}
 
+        return_blocks = {}
         for trace in raw_traces:
-            return_blocks, grouped_traces, raw_trace = get_return_blocks(bv, raw_trace=trace)
+            grouped_traces, raw_trace = get_return_blocks(return_blocks, bv, raw_trace=trace)
             output_postdominators(return_blocks, postdom_out)
-            trace_out[os.path.abspath(trace['dir'])] = reprocess_trace(bv, raw_trace, return_blocks)
+        for trace in raw_traces:
+            trace_out[os.path.abspath(trace['dir'])] = reprocess_trace(bv, trace['full_trace'], return_blocks)
 
         immediate_postdoms = find_immediate_postdominator(postdom_out)
         final_traces = {}
@@ -175,7 +179,7 @@ class DiffSliceAnalyzer(object):
                         final_traces[log].append([tr[0], immediate_postdoms[tr[1]][tr[2]][tr[3]]])
                     else:
                         # for incomplete traces, the last few blocks might ended up wrong post-doms
-                        final_traces[log].append([tr[0], None])
+                        final_traces[log].append([tr[0], -1])
         # diff
         diverge_points = set()
         branch_targets = set()

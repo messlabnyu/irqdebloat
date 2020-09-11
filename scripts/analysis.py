@@ -2,6 +2,7 @@ import os
 import re
 import sys
 import hashlib
+import itertools
 from string import Formatter
 
 from diffslice import DiffSliceAnalyzer
@@ -77,4 +78,7 @@ traces = []
 for tf in tracefiles:
     traces.append({'dir': tf, 'full_trace': parse_trace(tf)})
 
-DiffSliceAnalyzer().bn_analyze(traces, kernelfile, outdir)
+anal = DiffSliceAnalyzer()
+bv = anal.bn_init(kernelfile)
+for tr_x,tr_y in itertools.combinations(traces, 2):
+    anal.bn_analyze(bv, [tr_x, tr_y], kernelfile, outdir)

@@ -81,7 +81,7 @@ def fix_switch_table(bv, mal_func):
     Return a list of returning blocks, and a map of functions and a list of traces within the function
 '''
 # TODO(hzh): might have trouble in recursive call - need to verify that later
-def get_return_blocks(bv, raw_trace=None, tracefile=None):
+def get_return_blocks(return_block_map, bv, raw_trace=None, tracefile=None):
     if not raw_trace:
         with open(tracefile, 'rb') as fd:
             trace = json.load(fd)
@@ -158,7 +158,6 @@ def get_return_blocks(bv, raw_trace=None, tracefile=None):
             else:
                 local_trace[f].append(instaddr)
 
-    return_block_map = {}
     for bb in return_blocks:
         if bb.function not in return_block_map:
             return_block_map[bb.function] = [bb]
@@ -212,7 +211,7 @@ def get_return_blocks(bv, raw_trace=None, tracefile=None):
     for fun in final_traces.keys():
         if fun not in return_block_map:
             print "Err function:", fun.name, [[hex(addr) for addr in addrs] for addrs in final_traces[fun]]
-    return return_block_map, final_traces, [tr + image_base for tr in trace['full_trace']]
+    return final_traces, [tr + image_base for tr in trace['full_trace']]
 
 # DFS to get nodes in postorder, be sure to call this with `touched_node` set to `set()` to avoid any further trouble
 def build_postordering(node, touched_node=set()):
@@ -255,12 +254,15 @@ def output_postdominators(return_block_map, postdom_out):
     for fun in return_block_map:
         for ret_block in return_block_map[fun]:
             key = (fun, ret_block.start)
+
+            postdom = build_postdominators(ret_block)
+            out_dom = {}
+            for bb in postdom:
+                out_dom[bb.start] = [b.start for b in postdom[bb]]
             if key not in postdom_out:
-                postdom = build_postdominators(ret_block)
-                out_dom = {}
-                for bb in postdom:
-                    out_dom[bb.start] = [b.start for b in postdom[bb]]
                 postdom_out[key] = out_dom.copy()
+            else:
+                postdom_out[key].update(out_dom)
 
 def is_call_inst(function, address):
     return function.get_low_level_il_at(address).operation in \
@@ -285,8 +287,8 @@ def reprocess_trace(bv, raw_trace, return_blocks):
     while trace_index < len(raw_trace):
         instaddr = raw_trace[trace_index]
         functions = bv.get_functions_containing(instaddr)
-        #print hex(instaddr), " : ", functions
-        #print prev_func
+        print hex(instaddr), " : ", functions
+        print prev_func
 
         # check if we are at the return addr of the prev_func
         if prev_func:
@@ -312,8 +314,8 @@ def reprocess_trace(bv, raw_trace, return_blocks):
         while func_checklist and not ret_block:
             func = func_checklist.pop()
             ret_block = func.get_basic_block_at(instaddr)
-        #print return_blocks[func]
-        #print ret_block
+        print return_blocks[func]
+        print ret_block
 
         # initialize
         if not prev_func:
