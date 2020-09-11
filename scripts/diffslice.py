@@ -171,15 +171,12 @@ class DiffSliceAnalyzer(object):
         for log,trace in trace_out.iteritems():
             final_traces[log] = []
             for tr in trace:
-                # check if the current instruction is at the beginning of basicblock
-                if tr[0] != tr[3]:
-                    final_traces[log].append([tr[0], -1])
+                if tr[2] in immediate_postdoms[tr[1]] and tr[3] in immediate_postdoms[tr[1]][tr[2]]:
+                    final_traces[log].append([tr[0], immediate_postdoms[tr[1]][tr[2]][tr[3]]])
                 else:
-                    if tr[2] in immediate_postdoms[tr[1]] and tr[3] in immediate_postdoms[tr[1]][tr[2]]:
-                        final_traces[log].append([tr[0], immediate_postdoms[tr[1]][tr[2]][tr[3]]])
-                    else:
-                        # for incomplete traces, the last few blocks might ended up wrong post-doms
-                        final_traces[log].append([tr[0], -1])
+                    # for incomplete traces, the last few blocks might ended up wrong post-doms
+                    print "failed: ", hex(tr[0])
+                    final_traces[log].append([tr[0], -1])
         # diff
         diverge_points = set()
         branch_targets = set()

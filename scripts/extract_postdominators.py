@@ -282,11 +282,13 @@ def reprocess_trace(bv, raw_trace, return_blocks):
     scanning_trace = [None]
     trace_index = 0
     prev_func = []
+    fake_trace_cb = []
     instr_counter = 0
     cur_function = None
     while trace_index < len(raw_trace):
         instaddr = raw_trace[trace_index]
         functions = bv.get_functions_containing(instaddr)
+        callstack_size = len(prev_func)
         print hex(instaddr), " : ", functions
         print prev_func
 
@@ -321,6 +323,13 @@ def reprocess_trace(bv, raw_trace, return_blocks):
         if not prev_func:
             prev_func.append([func, ret_block, None])
 
+        # check the fixing ups queue
+        if fake_trace_cb:
+            # return out of the function
+            if fake_trace_cb[0][0] != func and callstack_size >= len(prev_func):
+                _, rb = fake_trace_cb.pop(0)
+                scanning_trace.append([rb.start, func, rb, rb.start])
+
         # push a guard entry into the trace to indicate a control-flow change
         if prev_func[-1][0] != func and scanning_trace[-1] != None:
             scanning_trace.append(None)
@@ -328,9 +337,7 @@ def reprocess_trace(bv, raw_trace, return_blocks):
         # check if we're at return block
         # NOTE(hzh): fix to compare BasicBlock with start address, looks like a problem in BN, Version 1.1.1339
         #if ret_block not in return_blocks[func]:
-        if ret_block.start not in [bb.start for bb in return_blocks[func]]:
-            scanning_trace.append([instaddr, func, None, ret_block.start])
-        else:
+        if ret_block.start in [bb.start for bb in return_blocks[func]]:
             # mark the entry to return block in reverse until we reach function start
             for index in reversed(range(len(scanning_trace))):
                 if scanning_trace[index] and scanning_trace[index][1] == func and scanning_trace[index][2] == None:
@@ -338,6 +345,27 @@ def reprocess_trace(bv, raw_trace, return_blocks):
                 if scanning_trace[index] and scanning_trace[index][0] == func.start:
                     break
             scanning_trace.append([instaddr, func, ret_block, ret_block.start])
+        # ohh, fuck, this is to fix TCG (basicblock) tracing, TCG bb just goes all the way down as long as there's no
+        # PC redirection. However, in normal sense, bb shoudl be splited if there's a jump to the middle of that bb.
+        elif ret_block.end in [bb.start for bb in return_blocks[func]]:
+            # get new return block
+            rb = func.get_basic_block_at(ret_block.end)
+            # mark the entry to return block in reverse until we reach function start
+            for index in reversed(range(len(scanning_trace))):
+                if scanning_trace[index] and scanning_trace[index][1] == func and scanning_trace[index][2] == None:
+                    scanning_trace[index][2] = rb
+                if scanning_trace[index] and scanning_trace[index][0] == func.start:
+                    break
+            scanning_trace.append([instaddr, func, rb, ret_block.start])
+            # if we seen it in the middle of a basicblock, we might already registered it before, remove the old registary
+            for i in reversed(range(len(fake_trace_cb))):
+                if fake_trace_cb[i][0] == func and fake_trace_cb[i][1].start == rb.start:
+                    fake_trace_cb.pop(i)
+                    break
+            # register callback when we once again return to this function or ret out of this function
+            fake_trace_cb.append([func, rb])
+        else:
+            scanning_trace.append([instaddr, func, None, ret_block.start])
 
         # check if inst is a `call`, push a guard entry into the trace, to track recursive call
         ci = find_next_callinst(bv, func, instaddr)
@@ -367,9 +395,9 @@ def reprocess_trace(bv, raw_trace, return_blocks):
         instr_counter += 1
 
     # verify the return block is in the same function
-    for tr in scanning_trace:
-        if tr and tr[2] and tr[2].function != tr[1]:
-                assert(False)
+    #for tr in scanning_trace:
+    #    if tr and tr[2] and tr[2].function != tr[1]:
+    #        assert(False)
 
     if DEBUG:
         for inst in scanning_trace:
