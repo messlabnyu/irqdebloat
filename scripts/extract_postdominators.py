@@ -81,7 +81,7 @@ def fix_switch_table(bv, mal_func):
     Return a list of returning blocks, and a map of functions and a list of traces within the function
 '''
 # TODO(hzh): might have trouble in recursive call - need to verify that later
-def get_return_blocks(return_block_map, bv, raw_trace=None, tracefile=None):
+def get_return_blocks(return_block_map, bv, raw_trace=None, tracefile=None, infer_return_block=False):
     if not raw_trace:
         with open(tracefile, 'rb') as fd:
             trace = json.load(fd)
@@ -117,6 +117,13 @@ def get_return_blocks(return_block_map, bv, raw_trace=None, tracefile=None):
             fun = bv.get_functions_containing(instaddr)
 
         assert(fun)
+
+        # append all "end" nodes of current function
+        for f in fun:
+            for bb in f.basic_blocks:
+                if not bb.outgoing_edges:
+                    return_blocks.add(bb)
+
         # NOTE(hzh): BN will get 2 basic blocks given 1 instruction address, we pick one with smaller addr
         #   ```
         #    0808a4c4  f00fb10dd0691408    lock cmpxchg dowrd [syslog_lock], ecx
@@ -135,7 +142,7 @@ def get_return_blocks(return_block_map, bv, raw_trace=None, tracefile=None):
             # the returning/exit block is the block with no outgoing edges
             if not bb.outgoing_edges:
                 #print fun[0].name, hex(inst + image_base), hex(basic_block.start), basic_block.outgoing_edges
-                return_blocks.add(basic_block)
+                return_blocks.add(bb)
         inst_lookahead = instaddr
 
         # check if we are still in the function
@@ -200,14 +207,16 @@ def get_return_blocks(return_block_map, bv, raw_trace=None, tracefile=None):
                     return_block_map[fun] += return_block_map[tf]
                 print "Resolved function:", fun.name, return_block_map[fun]
     # NOTE(hzh): make the last basic block in the trace the return block - in case that might called `exit` directly
+    # This might also involve some of the inline functions - IDed as function but inlined in asm
     for fun in final_traces.keys():
         if fun not in return_block_map:
-            return_block_map[fun] = []
-            for tr in final_traces[fun]:
-                basic_block = fun.get_basic_block_at(tr[-1])
-                if basic_block.start not in [x.start for x in return_block_map[fun]]:
-                    return_block_map[fun].append(basic_block)
-            print "Truncated function:", fun.name, return_block_map[fun]
+            if infer_return_block:
+                return_block_map[fun] = []
+                for tr in final_traces[fun]:
+                    basic_block = fun.get_basic_block_at(tr[-1])
+                    if basic_block.start not in [x.start for x in return_block_map[fun]]:
+                        return_block_map[fun].append(basic_block)
+                print "Truncated function:", fun.name, return_block_map[fun]
     for fun in final_traces.keys():
         if fun not in return_block_map:
             print "Err function:", fun.name, [[hex(addr) for addr in addrs] for addrs in final_traces[fun]]
@@ -285,6 +294,7 @@ def reprocess_trace(bv, raw_trace, return_blocks):
     fake_trace_cb = []
     instr_counter = 0
     cur_function = None
+    intended_return_block = {}
     while trace_index < len(raw_trace):
         instaddr = raw_trace[trace_index]
         functions = bv.get_functions_containing(instaddr)
@@ -297,7 +307,7 @@ def reprocess_trace(bv, raw_trace, return_blocks):
             eos = None
             for i in reversed(range(len(prev_func))):
                 if instaddr >= prev_func[i][1].start and instaddr < prev_func[i][1].end:
-                    eos = i + 1
+                    eos = i
                     break
             if eos:
                 prev_func = prev_func[:eos]
@@ -323,8 +333,10 @@ def reprocess_trace(bv, raw_trace, return_blocks):
         if not prev_func:
             prev_func.append([func, ret_block, None])
 
+        print "fake_trace : ", fake_trace_cb
         # check the fixing ups queue
         if fake_trace_cb:
+            print fake_trace_cb[0][0], func, callstack_size, len(prev_func)
             # return out of the function
             if fake_trace_cb[0][0] != func and callstack_size >= len(prev_func):
                 _, rb = fake_trace_cb.pop(0)
@@ -367,8 +379,10 @@ def reprocess_trace(bv, raw_trace, return_blocks):
                     break
             # register callback when we once again return to this function or ret out of this function
             fake_trace_cb.append([func, rb])
+            print "add fake trace : ", hex(instaddr), " : ", func, rb
         else:
             scanning_trace.append([instaddr, func, None, ret_block.start])
+            intended_return_block[len(scanning_trace)-1] = return_blocks[func]
 
         # check if inst is a `call`, push a guard entry into the trace, to track recursive call
         ci = find_next_callinst(bv, func, instaddr)
@@ -422,12 +436,20 @@ def reprocess_trace(bv, raw_trace, return_blocks):
     #   ...
     #
     prev_bb = None
-    for inst in scanning_trace[::-1]:
+    prev_func = None
+    for tridx in reversed(range(len(scanning_trace))):
+        inst = scanning_trace[tridx]
         if inst and inst[2]:
             prev_bb = inst[2]
-        elif inst:
-            inst[2] = prev_bb
-            #print "Fixing {INST}, {FUNC}, {BB}".format(INST=hex(inst[0]), FUNC=inst[1].name, BB=hex(inst[2].start))
+        elif inst and prev_func:
+            if inst[1] == prev_func:
+                scanning_trace[tridx][2] = prev_bb
+            else:
+                if tridx in intended_return_block:
+                    prev_bb = scanning_trace[tridx][2] = intended_return_block[tridx][0]    # suppose any return block should do
+            print "Fixing {INST}, {FUNC}, {BB}".format(INST=hex(inst[0]), FUNC=inst[1].name, BB=hex(inst[2].start))
+        if inst:
+            prev_func = inst[1]
     return [[tr[0], tr[1], tr[2].start if tr[2] else None, tr[3]] for tr in scanning_trace if tr]
 
 
