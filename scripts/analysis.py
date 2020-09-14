@@ -67,10 +67,14 @@ def parse_trace(tracefile):
         # skip exception vector stub
         if addr&0xffff0000 == 0xffff0000:
             continue
+        # deduplicate loop trace
+        if trace and addr == trace[-1]:
+            continue
         trace.append(addr)
     return trace
 
 tracefiles = [trace_buckets[f].getone() for f in trace_buckets.keys()]
+#tracefiles = ["../log/trace/trace_13.log", "../log/trace/trace_347.log"]
 kernelfile = "/data/tonyhu/irq/log/home/moyix/bbb/build/tmp/work/beaglebone-poky-linux-gnueabi/linux-stable/5.7.14-r0/build/vmlinux"
 outdir = "/data/tonyhu/irq/log/diffout"
 
