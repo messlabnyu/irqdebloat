@@ -5,6 +5,8 @@ import itertools
 
 from extract_postdominators import *
 
+DEBUG = False
+
 # idea comes from [diffslicing paper](http://bitblaze.cs.berkeley.edu/papers/diffslicing_oakland11.pdf)
 class DiffSliceAnalyzer(object):
     def diff(self, outdir, trace_wanted, trace_toremove):
@@ -46,6 +48,17 @@ class DiffSliceAnalyzer(object):
                     aligned.append([vpc[0], vpc[1]])
                     proceed(traces, vpc, ei, 0)
                     proceed(traces, vpc, ei, 1)
+            if DEBUG:
+                print "EI Miss match"
+                print [hex(x) for x in ei[0]], [hex(x) for x in ei[1]]
+                if vpc[0] < len(traces[0]):
+                    print hex(iaddr(traces[0], vpc[0])),
+                else:
+                    print "None",
+                if vpc[1] < len(traces[1]):
+                    print hex(iaddr(traces[1], vpc[1]))
+                else:
+                    print "None"
             # NOTE(hzh): Sometimes 2 traces exits at different branch, ends up different immediate-postdominators. compare the EI without the last one ipdom
             if ei[0] != ei[1] and ei[0][:-1] == ei[1][:-1]:
                 while not endoftrace(vpc, traces) and iaddr(traces[0], vpc[0]) == iaddr(traces[1], vpc[1]):
@@ -62,6 +75,17 @@ class DiffSliceAnalyzer(object):
                     disalign = 0 if len(ei[0]) > len(ei[1]) else 1
                     while len(ei[disalign]) > len(ei[1 - disalign]) and not endoftrace(vpc, traces):
                         proceed(traces, vpc, ei, disalign)
+            if DEBUG:
+                print "EI Realign"
+                print [hex(x) for x in ei[0]], [hex(x) for x in ei[1]]
+                if vpc[0] < len(traces[0]):
+                    print hex(iaddr(traces[0], vpc[0])),
+                else:
+                    print "None",
+                if vpc[1] < len(traces[1]):
+                    print hex(iaddr(traces[1], vpc[1]))
+                else:
+                    print "None"
 
         # output divergence point
         branch_targets = set()
@@ -171,12 +195,24 @@ class DiffSliceAnalyzer(object):
         for log,trace in trace_out.iteritems():
             final_traces[log] = []
             for tr in trace:
+                # make sure any trace inside of a basicblock is marked -1
+                if tr[0] != tr[3]:
+                    final_traces[log].append([tr[0], -1])
+                    continue
                 if tr[2] in immediate_postdoms[tr[1]] and tr[3] in immediate_postdoms[tr[1]][tr[2]]:
                     final_traces[log].append([tr[0], immediate_postdoms[tr[1]][tr[2]][tr[3]]])
                 else:
                     # for incomplete traces, the last few blocks might ended up wrong post-doms
                     print "failed: ", hex(tr[0])
                     final_traces[log].append([tr[0], -1])
+        if DEBUG:
+            count=0
+            for l in final_traces:
+                with open("/tmp/d{:d}.log".format(count), 'w') as fd:
+                    fd.write(l)
+                    for t in final_traces[l]:
+                        fd.write(hex(t[0]) + " : " + hex(t[1]) + "\n")
+                count += 1
         # diff
         diverge_points = set()
         branch_targets = set()

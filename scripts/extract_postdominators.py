@@ -277,11 +277,25 @@ def is_call_inst(function, address):
     return function.get_low_level_il_at(address).operation in \
             [LowLevelILOperation.LLIL_CALL, LowLevelILOperation.LLIL_CALL_STACK_ADJUST]
 
+def is_return_inst(function, address):
+    idx = function.get_low_level_il_exits_at(address)
+    llil = function.low_level_il[idx]
+    return llil.operation == LowLevelILOperation.LLIL_JUMP_TO and llil.dest.operation == LowLevelILOperation.LLIO_POP
+
 def find_next_callinst(bv, function, address):
     bb = function.get_basic_block_at(address)
     iaddr = address
     while iaddr >= bb.start and iaddr < bb.end:
         if is_call_inst(function, iaddr):
+            return iaddr
+        iaddr += bv.get_instruction_length(iaddr)
+    return None
+
+def check_return(bv, function, address):
+    bb = function.get_basic_block_at(address)
+    iaddr = address
+    while iaddr >= bb.start and iaddr < bb.end:
+        if is_return_inst(function, iaddr):
             return iaddr
         iaddr += bv.get_instruction_length(iaddr)
     return None
@@ -292,15 +306,21 @@ def reprocess_trace(bv, raw_trace, return_blocks):
     trace_index = 0
     prev_func = []
     fake_trace_cb = []
+    shadow_instr = None
     instr_counter = 0
     cur_function = None
     intended_return_block = {}
     while trace_index < len(raw_trace):
-        instaddr = raw_trace[trace_index]
+        if shadow_instr:
+            instaddr = shadow_instr
+            shadow_instr = None
+        else:
+            instaddr = raw_trace[trace_index]
         functions = bv.get_functions_containing(instaddr)
         callstack_size = len(prev_func)
-        print hex(instaddr), " : ", functions
-        print prev_func
+        if DEBUG:
+            print hex(instaddr), " : ", functions
+            print prev_func
 
         # check if we are at the return addr of the prev_func
         if prev_func:
@@ -326,17 +346,20 @@ def reprocess_trace(bv, raw_trace, return_blocks):
         while func_checklist and not ret_block:
             func = func_checklist.pop()
             ret_block = func.get_basic_block_at(instaddr)
-        print return_blocks[func]
-        print ret_block
+        if DEBUG:
+            print return_blocks[func]
+            print ret_block
 
         # initialize
         if not prev_func:
             prev_func.append([func, ret_block, None])
 
-        print "fake_trace : ", fake_trace_cb
+        if DEBUG:
+            print "fake_trace : ", fake_trace_cb
         # check the fixing ups queue
         if fake_trace_cb:
-            print fake_trace_cb[0][0], func, callstack_size, len(prev_func)
+            if DEBUG:
+                print fake_trace_cb[0][0], func, callstack_size, len(prev_func)
             # return out of the function
             if fake_trace_cb[0][0] != func and callstack_size >= len(prev_func):
                 _, rb = fake_trace_cb.pop(0)
@@ -379,10 +402,21 @@ def reprocess_trace(bv, raw_trace, return_blocks):
                     break
             # register callback when we once again return to this function or ret out of this function
             fake_trace_cb.append([func, rb])
-            print "add fake trace : ", hex(instaddr), " : ", func, rb
+            if DEBUG:
+                print "add fake trace : ", hex(instaddr), " : ", func, rb
         else:
             scanning_trace.append([instaddr, func, None, ret_block.start])
             intended_return_block[len(scanning_trace)-1] = return_blocks[func]
+
+            # yet again the TCG bb discrepancy, however, only considering the adjecent next (normal) basicblock here
+            if (not ret_block.outgoing_edges and not check_return(bv, func, instaddr)) or \
+               (len(ret_block.outgoing_edges) == 1 and ret_block.outgoing_edges[0].target.start == ret_block.end):
+                # make sure no function calls afterwards (even if there is a call inst, we should be expecting to see
+                # another TCG bb right after the call)
+                if not find_next_callinst(bv, func, instaddr):
+                    if DEBUG:
+                        print "shadow instr ", hex(instaddr), " -> ", hex(ret_block.end)
+                    shadow_instr = ret_block.end
 
         # check if inst is a `call`, push a guard entry into the trace, to track recursive call
         ci = find_next_callinst(bv, func, instaddr)
@@ -408,8 +442,9 @@ def reprocess_trace(bv, raw_trace, return_blocks):
         if (instr_counter % 10000) == 0:
             print "Re-Processed {COUNT}/{TOTAL}".format(COUNT=instr_counter, TOTAL=len(raw_trace))
 
-        trace_index += 1
-        instr_counter += 1
+        if not shadow_instr:
+            trace_index += 1
+            instr_counter += 1
 
     # verify the return block is in the same function
     #for tr in scanning_trace:
