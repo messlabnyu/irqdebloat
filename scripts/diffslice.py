@@ -25,10 +25,10 @@ class DiffSliceAnalyzer(object):
         def iaddr(tr, idx):
             return tr[idx][0]
         def updateei(ei, pc, ipd):
-            while ei and ei[-1] == pc:
+            while ei and ei[-1][0] == pc:
                 ei.pop()
             if ipd and pc != ipd:
-                ei.append(ipd)
+                ei.append((ipd, pc))
         def inbasicblock(tr, pc):
             return not ipdom(tr[0], pc[0]) and not ipdom(tr[1], pc[1])
         def proceed(tr, pc, es, i):
@@ -50,7 +50,7 @@ class DiffSliceAnalyzer(object):
                     proceed(traces, vpc, ei, 1)
             if DEBUG:
                 print "EI Miss match"
-                print [hex(x) for x in ei[0]], [hex(x) for x in ei[1]]
+                print [(hex(x[0]),hex(x[1])) for x in ei[0]], [(hex(x[0]),hex(x[1])) for x in ei[1]]
                 if vpc[0] < len(traces[0]):
                     print hex(iaddr(traces[0], vpc[0])),
                 else:
@@ -77,7 +77,7 @@ class DiffSliceAnalyzer(object):
                         proceed(traces, vpc, ei, disalign)
             if DEBUG:
                 print "EI Realign"
-                print [hex(x) for x in ei[0]], [hex(x) for x in ei[1]]
+                print [(hex(x[0]),hex(x[1])) for x in ei[0]], [(hex(x[0]),hex(x[1])) for x in ei[1]]
                 if vpc[0] < len(traces[0]):
                     print hex(iaddr(traces[0], vpc[0])),
                 else:
