@@ -121,7 +121,7 @@ def get_return_blocks(return_block_map, bv, raw_trace=None, tracefile=None, infe
         # append all "end" nodes of current function
         for f in fun:
             for bb in f.basic_blocks:
-                if not bb.outgoing_edges:
+                if not bb.outgoing_edges or check_return(bv, f, bb.start):
                     return_blocks.add(bb)
 
         # NOTE(hzh): BN will get 2 basic blocks given 1 instruction address, we pick one with smaller addr
@@ -278,9 +278,9 @@ def is_call_inst(function, address):
             [LowLevelILOperation.LLIL_CALL, LowLevelILOperation.LLIL_CALL_STACK_ADJUST]
 
 def is_return_inst(function, address):
-    idx = function.get_low_level_il_exits_at(address)
+    idx = min(function.get_low_level_il_exits_at(address))
     llil = function.low_level_il[idx]
-    return llil.operation == LowLevelILOperation.LLIL_JUMP_TO and llil.dest.operation == LowLevelILOperation.LLIO_POP
+    return llil.operation == LowLevelILOperation.LLIL_JUMP_TO and llil.dest.operation == LowLevelILOperation.LLIL_POP
 
 def find_next_callinst(bv, function, address):
     bb = function.get_basic_block_at(address)
