@@ -482,7 +482,7 @@ def reprocess_trace(bv, raw_trace, return_blocks):
             else:
                 if tridx in intended_return_block:
                     prev_bb = scanning_trace[tridx][2] = intended_return_block[tridx][0]    # suppose any return block should do
-            print "Fixing {INST}, {FUNC}, {BB}".format(INST=hex(inst[0]), FUNC=inst[1].name, BB=hex(inst[2].start))
+            print "Fixing {INST}, {FUNC}, {BB}".format(INST=hex(inst[0]), FUNC=inst[1].name, BB=hex(inst[2].start) if inst[2] else "None")
         if inst:
             prev_func = inst[1]
     return [[tr[0], tr[1], tr[2].start if tr[2] else None, tr[3]] for tr in scanning_trace if tr]

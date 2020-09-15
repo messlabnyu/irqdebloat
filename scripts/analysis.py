@@ -70,11 +70,17 @@ def parse_trace(tracefile):
         # deduplicate loop trace
         if trace and addr == trace[-1]:
             continue
+
         trace.append(addr)
+
+        if len(trace) > 10000:
+            break
     return trace
 
 tracefiles = [trace_buckets[f].getone() for f in trace_buckets.keys()]
 #tracefiles = ["../log/trace/trace_13.log", "../log/trace/trace_347.log"]
+#tracefiles = ["../log/trace/trace_93.log", "../log/trace/trace_347.log"]
+#tracefiles = ["../log/trace/trace_93.log", "../log/trace/trace_361.log"]
 kernelfile = "/data/tonyhu/irq/log/home/moyix/bbb/build/tmp/work/beaglebone-poky-linux-gnueabi/linux-stable/5.7.14-r0/build/vmlinux"
 outdir = "/data/tonyhu/irq/log/diffout"
 
