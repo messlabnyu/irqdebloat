@@ -278,9 +278,11 @@ def is_call_inst(function, address):
             [LowLevelILOperation.LLIL_CALL, LowLevelILOperation.LLIL_CALL_STACK_ADJUST]
 
 def is_return_inst(function, address):
-    idx = min(function.get_low_level_il_exits_at(address))
-    llil = function.low_level_il[idx]
-    return llil.operation == LowLevelILOperation.LLIL_JUMP_TO and llil.dest.operation == LowLevelILOperation.LLIL_POP
+    for idx in function.get_low_level_il_exits_at(address):
+        llil = function.low_level_il[idx]
+        if llil.operation == LowLevelILOperation.LLIL_JUMP_TO and llil.dest.operation == LowLevelILOperation.LLIL_POP:
+            return True
+    return False
 
 def find_next_callinst(bv, function, address):
     bb = function.get_basic_block_at(address)
