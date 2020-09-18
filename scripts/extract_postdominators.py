@@ -121,7 +121,7 @@ def get_return_blocks(return_block_map, bv, raw_trace=None, tracefile=None, infe
         # append all "end" nodes of current function
         for f in fun:
             for bb in f.basic_blocks:
-                if not bb.outgoing_edges or check_return(bv, f, bb.start):
+                if not bb.outgoing_edges or check_return(bv, f, instaddr):
                     return_blocks.add(bb)
 
         # NOTE(hzh): BN will get 2 basic blocks given 1 instruction address, we pick one with smaller addr
@@ -280,7 +280,9 @@ def is_call_inst(function, address):
 def is_return_inst(function, address):
     for idx in function.get_low_level_il_exits_at(address):
         llil = function.low_level_il[idx]
-        if llil.operation == LowLevelILOperation.LLIL_JUMP_TO and llil.dest.operation == LowLevelILOperation.LLIL_POP:
+        if (llil.operation == LowLevelILOperation.LLIL_JUMP_TO or \
+                llil.operation == LowLevelILOperation.LLIL_JUMP) and \
+                llil.dest.operation == LowLevelILOperation.LLIL_POP:
             return True
     return False
 
