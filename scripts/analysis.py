@@ -81,6 +81,7 @@ tracefiles = [trace_buckets[f].getone() for f in trace_buckets.keys()]
 #tracefiles = ["../log/trace/trace_13.log", "../log/trace/trace_347.log"]
 #tracefiles = ["../log/trace/trace_93.log", "../log/trace/trace_347.log"]
 #tracefiles = ["../log/trace/trace_93.log", "../log/trace/trace_361.log"]
+#tracefiles = ["../log/trace/trace_93.log", "../log/trace/trace_1.log"]
 kernelfile = "/data/tonyhu/irq/log/home/moyix/bbb/build/tmp/work/beaglebone-poky-linux-gnueabi/linux-stable/5.7.14-r0/build/vmlinux"
 outdir = "/data/tonyhu/irq/log/diffout"
 
@@ -88,7 +89,20 @@ traces = []
 for tf in tracefiles:
     traces.append({'dir': tf, 'full_trace': parse_trace(tf)})
 
+done_combo = set()
+if os.path.exists(os.path.join(outdir, "done.log")):
+    with open(os.path.join(outdir, "done.log"), 'r') as fd:
+        done_combo = set(fd.read().strip().split('\n'))
+
 anal = DiffSliceAnalyzer()
 bv = anal.bn_init(kernelfile)
 for tr_x,tr_y in itertools.combinations(traces, 2):
+
+    key = tr_x['dir']+tr_y['dir']
+    if key in done_combo or (tr_y['dir']+tr_x['dir']) in done_combo:
+        continue
+    done_combo.add(key)
+
     anal.bn_analyze(bv, [tr_x, tr_y], kernelfile, outdir)
+    with open(os.path.join(outdir, "done.log"), 'w') as fd:
+        fd.write("\n".join(done_combo))
