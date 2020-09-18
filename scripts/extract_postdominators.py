@@ -121,7 +121,7 @@ def get_return_blocks(return_block_map, bv, raw_trace=None, tracefile=None, infe
         # append all "end" nodes of current function
         for f in fun:
             for bb in f.basic_blocks:
-                if not bb.outgoing_edges or check_return(bv, f, instaddr):
+                if not bb.outgoing_edges or check_return(bv, f, bb.start):
                     return_blocks.add(bb)
 
         # NOTE(hzh): BN will get 2 basic blocks given 1 instruction address, we pick one with smaller addr
