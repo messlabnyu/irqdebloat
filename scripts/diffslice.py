@@ -98,7 +98,7 @@ class DiffSliceAnalyzer(object):
             else:
                 assert(iaddr(traces[0], prev_tr0) == iaddr(traces[1], prev_tr1))
                 diverge.append(iaddr(traces[0], prev_tr0))
-                branch_targets.add((iaddr(traces[1], prev_tr1), iaddr(traces[1], prev_tr1 + 1)))
+                branch_targets.add((iaddr(traces[1], prev_tr1), iaddr(traces[0], tr0), iaddr(traces[1], prev_tr1 + 1)))
                 prev_tr0 = tr0
                 prev_tr1 = tr1
                 continue
@@ -108,13 +108,13 @@ class DiffSliceAnalyzer(object):
             else:
                 assert(iaddr(traces[0], prev_tr0) == iaddr(traces[1], prev_tr1))
                 diverge.append(iaddr(traces[0], prev_tr0))
-                branch_targets.add((iaddr(traces[1], prev_tr1), iaddr(traces[1], prev_tr1 + 1)))
+                branch_targets.add((iaddr(traces[1], prev_tr1), iaddr(traces[0], tr0), iaddr(traces[1], prev_tr1 + 1)))
                 prev_tr0 = tr0
                 prev_tr1 = tr1
         assert(iaddr(traces[0], prev_tr0) == iaddr(traces[1], prev_tr1))
         if not endoftrace([prev_tr0 + 1, prev_tr1 + 1], traces):
             diverge.append(iaddr(traces[0], prev_tr0))
-            branch_targets.add((iaddr(traces[1], prev_tr1), iaddr(traces[1], prev_tr1 + 1)))
+            branch_targets.add((iaddr(traces[1], prev_tr1), iaddr(traces[0], prev_tr0 + 1), iaddr(traces[1], prev_tr1 + 1)))
 
         # output the aligned pair of traces
         with open(os.path.join(outdir, "aligned_{:d}_{:d}.json".format(*trace_ids)), 'w') as fd:
@@ -230,5 +230,11 @@ class DiffSliceAnalyzer(object):
         #with open(os.path.join(outdir, "patch.json"), 'w') as fd:
         #    json.dump({'locations': [pt for pt in patch_points]}, fd)
         with open(os.path.join(outdir, "diverge_{:d}_{:d}.json".format(idx, idy)), 'w') as fd:
-            json.dump({'diverge': [pt for pt in diverge]}, fd)
+            jout = {'diverge': [pt for pt in diverge], 'target': {}}
+            for xl in branch_targets:
+                if xl[0] not in jout['target']:
+                    jout['target'][xl[0]] = []
+                jout['target'][xl[0]] = [e for e in set(list(xl[1:]) + jout['target'][xl[0]])]
+            json.dump(jout, fd)
+            print [[hex(x) for x in xl] for xl in branch_targets]
 
