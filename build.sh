@@ -40,7 +40,8 @@ else
 fi
 
 
-"$(dirname $0)/configure" \
+export LD_LIBRARY_PATH=${PANDA_LLVM}/lib:$LD_LIBRARY_PATH
+CC=clang CXX=clang++ "$(dirname $0)/configure" \
     --disable-vhost-net \
     --disable-werror \
     --target-list=x86_64-softmmu,i386-softmmu,arm-softmmu,ppc-softmmu \
