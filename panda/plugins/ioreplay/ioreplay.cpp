@@ -83,14 +83,24 @@ static void ioread(CPUState *env, target_ulong pc, hwaddr addr, uint32_t size, u
 #endif
 }
 
-static int before_block_exec(CPUState *env, TranslationBlock *tb) {
+static void top_loop(CPUState *cpu) {
+    load_states(cpu, memfile, cpufile);
+}
+
+extern bool panda_exit_loop;
+static bool before_block_exec_invalidate_opt(CPUState *cpu, TranslationBlock *tb) {
     num_blocks++;
     if (limit_trace && qemu_loglevel && num_blocks > MAX_BLOCKS) {
+        panda_exit_loop = true;
         printf("Truncate Trace (max block number exceeded)\n");
         qemu_loglevel = 0;
         num_blocks = 0;
-        load_states(env, memfile, cpufile);
+        return true;
     }
+    return false;
+}
+
+static int before_block_exec(CPUState *env, TranslationBlock *tb) {
 #ifdef TARGET_ARM
     // Cortex-A exception vector:
     // https://developer.arm.com/documentation/ddi0301/h/programmer-s-model/exceptions/exception-vectors
@@ -165,6 +175,10 @@ bool init_plugin(void *self) {
     panda_register_callback(self, PANDA_CB_AFTER_MACHINE_INIT, pcb);
     pcb.before_block_exec = before_block_exec;
     panda_register_callback(self, PANDA_CB_BEFORE_BLOCK_EXEC, pcb);
+    pcb.before_block_exec_invalidate_opt = before_block_exec_invalidate_opt;
+    panda_register_callback(self, PANDA_CB_BEFORE_BLOCK_EXEC_INVALIDATE_OPT, pcb);
+    pcb.top_loop = top_loop;
+    panda_register_callback(self, PANDA_CB_TOP_LOOP, pcb);
 
     start = time(NULL);
 
