@@ -7,6 +7,7 @@ import json
 DIFFOUT_DIR = "/data/tonyhu/irq/log/diffout"
 
 diverge_targets = {}
+diverge_trace = {}
 addrstat = {}
 difflog = {}
 for d,_,files in os.walk(DIFFOUT_DIR):
@@ -31,6 +32,9 @@ for d,_,files in os.walk(DIFFOUT_DIR):
                 if k not in diverge_targets:
                     diverge_targets[k] = set()
                 diverge_targets[k].update(jd['target'][k])
+                if k not in diverge_trace:
+                    diverge_trace[k] = set()
+                diverge_trace[k].update([ix, iy])
 
             for addr in set(diverges):
                 if addr not in addrstat:
@@ -50,4 +54,4 @@ for x in difflog:
 for tp, cnt in tracestat.items():
     print tp, " : ", cnt
 for d, t in diverge_targets.items():
-    print hex(int(d)), " : ", [hex(e) for e in t]
+    print hex(int(d)), " : ", [hex(e) for e in t], " - ", [t for t in diverge_trace[d]]
