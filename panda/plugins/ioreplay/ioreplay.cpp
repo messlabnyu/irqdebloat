@@ -32,6 +32,9 @@ void uninit_plugin(void *);
 #include <set>
 #include <deque>
 #include <sstream>
+#include <vector>
+#include <fstream>
+
 
 std::set<uint64_t> ioaddrs_seen;
 std::deque<uint64_t> iovals;
@@ -62,6 +65,7 @@ static uint64_t start_time = 0;
 #ifdef TARGET_ARM
 static uint32_t prev_cpu_mode = 0;
 static uint64_t trace_count = 0;
+static std::vector<gchar*> ioseq;
 #endif
 
 static void ioread(CPUState *env, target_ulong pc, hwaddr addr, uint32_t size, uint64_t *val) {
@@ -77,6 +81,9 @@ static void ioread(CPUState *env, target_ulong pc, hwaddr addr, uint32_t size, u
         assert(read(fd, val, sizeof(*val)) > 0);
     }
 #ifdef TARGET_ARM
+    ioseq.emplace_back(
+            g_strdup_printf("IO READ pc=" TARGET_FMT_lx " addr=%08" HWADDR_PRIx " size %u val=%08" PRIx64 "\n",
+                cpu->regs[15], addr, size, *val));
     if (ioreplay_debug) 
         printf("IO READ pc=" TARGET_FMT_lx " addr=%08" HWADDR_PRIx " size %u val=%08" PRIx64 "\n",
             cpu->regs[15], addr, size, *val);
@@ -129,6 +136,19 @@ static int before_block_exec(CPUState *env, TranslationBlock *tb) {
             qemu_set_log_filename(newlog, nullptr);
             qemu_log("cpu mode: %x, prev: %x\n", cpu_mode, prev_cpu_mode);
             qemu_log("Trace [0: %08x] cpsr %x, prev %x\n", cpu->regs[15], cpsr_read(cpu), prev_cpu_mode);
+
+            // log io vals
+            if (!ioseq.empty() && trace_count) {
+                char *iolog = g_strdup_printf("%s/iovals_%ld.log", tracedir, trace_count-1);
+                std::ofstream os(iolog, std::ofstream::out);
+                for (gchar *v : ioseq) {
+                    os << v;
+                    g_free(v);
+                }
+                os.close();
+                g_free(iolog);
+            }
+            ioseq.clear();
 
             num_blocks = 0;
         }

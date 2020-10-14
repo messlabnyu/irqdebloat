@@ -39,6 +39,8 @@ class TraceBucket(object):
 trace_buckets = dict()
 for curdir,_,traces in os.walk(tracedir):
     for tr in traces:
+        if not tr.startswith("trace_"):
+            continue
         trpath = os.path.join(curdir, tr)
         with open(trpath, 'r') as fd:
             if not check_status(fd.readline()):
@@ -83,6 +85,7 @@ tracefiles = [trace_buckets[f].getone() for f in trace_buckets.keys()]
 #tracefiles = ["../log/trace/trace_93.log", "../log/trace/trace_361.log"]
 #tracefiles = ["../log/trace/trace_93.log", "../log/trace/trace_1.log"]
 kernelfile = "/data/tonyhu/irq/log/home/moyix/bbb/build/tmp/work/beaglebone-poky-linux-gnueabi/linux-stable/5.7.14-r0/build/vmlinux"
+kernelfile = "/data/tonyhu/irq/log/linux/vmlinux"
 outdir = "/data/tonyhu/irq/log/diffout"
 
 traces = []
