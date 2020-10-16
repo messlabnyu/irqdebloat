@@ -132,13 +132,13 @@ static int before_block_exec(CPUState *env, TranslationBlock *tb) {
 
             //qemu_loglevel |= CPU_LOG_TB_IN_ASM|CPU_LOG_INT|CPU_LOG_TB_CPU;
             qemu_loglevel |= CPU_LOG_EXEC|CPU_LOG_TB_NOCHAIN;
-            char *newlog = g_strdup_printf("%s/trace_%lld.log", tracedir, trace_count++);
+            char *newlog = g_strdup_printf("%s/trace_%lld.log", tracedir, trace_count);
             qemu_set_log_filename(newlog, nullptr);
             qemu_log("cpu mode: %x, prev: %x\n", cpu_mode, prev_cpu_mode);
             qemu_log("Trace [0: %08x] cpsr %x, prev %x\n", cpu->regs[15], cpsr_read(cpu), prev_cpu_mode);
 
             // log io vals
-            if (!ioseq.empty() && trace_count) {
+            if (!ioseq.empty() && trace_count) {    // ignores any io before actually started logging traces
                 char *iolog = g_strdup_printf("%s/iovals_%ld.log", tracedir, trace_count-1);
                 std::ofstream os(iolog, std::ofstream::out);
                 for (gchar *v : ioseq) {
@@ -150,6 +150,7 @@ static int before_block_exec(CPUState *env, TranslationBlock *tb) {
             }
             ioseq.clear();
 
+            trace_count++;
             num_blocks = 0;
         }
         break;
