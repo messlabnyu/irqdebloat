@@ -181,17 +181,32 @@ class DiffSliceAnalyzer(object):
 
     def bn_analyze(self, bv, raw_traces, binfile, outdir):
         postdom_out = {}
+        final_traces = {}
         trace_out = {}
+        new_trace = []
 
+        # Check done list && skip already pre-processed traces
+        donelog = os.path.join(outdir, "preprocessed.log")
+        pre_trace = {'traces': []}
+        if os.path.exists(donelog):
+            with open(donelog, 'r') as fd:
+                pre_trace = json.load(fd)
+        new_traces = [tr for tr in raw_traces if tr['dir'] not in pre_trace['traces']]
+
+        # pre load traces
+        for tr in pre_trace['traces']:
+            with open("{}.pre".format(tr), 'r') as fd:
+                final_traces[tr] = json.load(fd)['trace']
+
+        # pre processing new traces
         return_blocks = {}
-        for trace in raw_traces:
+        for trace in new_traces:
             grouped_traces, raw_trace = get_return_blocks(return_blocks, bv, raw_trace=trace)
             output_postdominators(return_blocks, postdom_out)
-        for trace in raw_traces:
+        for trace in new_traces:
             trace_out[os.path.abspath(trace['dir'])] = reprocess_trace(bv, trace['full_trace'], return_blocks)
 
         immediate_postdoms = find_immediate_postdominator(postdom_out)
-        final_traces = {}
         for log,trace in trace_out.iteritems():
             final_traces[log] = []
             for tr in trace:
@@ -205,6 +220,17 @@ class DiffSliceAnalyzer(object):
                     # for incomplete traces, the last few blocks might ended up wrong post-doms
                     print "failed: ", hex(tr[0])
                     final_traces[log].append([tr[0], -1])
+            # log new traces
+            if log not in pre_trace['traces']:
+                pre_trace['traces'].append(log)
+                with open("{}.pre".format(log), 'w') as fd:
+                    json.dump({'trace': final_traces[log]}, fd)
+        # save log
+        with open(donelog, 'w') as fd:
+            json.dump(pre_trace, fd)
+
+        # load pre-processed traces
+
         if DEBUG:
             count=0
             for l in final_traces:
@@ -214,9 +240,10 @@ class DiffSliceAnalyzer(object):
                         fd.write(hex(t[0]) + " : " + hex(t[1]) + "\n")
                 count += 1
         # diff
-        diverge_points = set()
-        branch_targets = set()
         for tr_x,tr_y in itertools.combinations(final_traces, 2):
+            diverge_points = set()
+            branch_targets = set()
+
             idx = int(tr_x.split('_')[-1].split('.')[0])
             idy = int(tr_y.split('_')[-1].split('.')[0])
             diverge, aligned, targets = self.diff(
@@ -226,15 +253,16 @@ class DiffSliceAnalyzer(object):
             print [hex(x) for x in diverge]
             diverge_points.difference_update(diverge)
             branch_targets.update(targets)
-        patch_points = set([pt[1] for pt in branch_targets if pt[0] in diverge_points])
-        #with open(os.path.join(outdir, "patch.json"), 'w') as fd:
-        #    json.dump({'locations': [pt for pt in patch_points]}, fd)
-        with open(os.path.join(outdir, "diverge_{:d}_{:d}.json".format(idx, idy)), 'w') as fd:
-            jout = {'diverge': [pt for pt in diverge], 'target': {}}
-            for xl in branch_targets:
-                if xl[0] not in jout['target']:
-                    jout['target'][xl[0]] = []
-                jout['target'][xl[0]] = [e for e in set(list(xl[1:]) + jout['target'][xl[0]])]
-            json.dump(jout, fd)
-            print [[hex(x) for x in xl] for xl in branch_targets]
+
+            patch_points = set([pt[1] for pt in branch_targets if pt[0] in diverge_points])
+            #with open(os.path.join(outdir, "patch.json"), 'w') as fd:
+            #    json.dump({'locations': [pt for pt in patch_points]}, fd)
+            with open(os.path.join(outdir, "diverge_{:d}_{:d}.json".format(idx, idy)), 'w') as fd:
+                jout = {'diverge': [pt for pt in diverge], 'target': {}}
+                for xl in branch_targets:
+                    if xl[0] not in jout['target']:
+                        jout['target'][xl[0]] = []
+                    jout['target'][xl[0]] = [e for e in set(list(xl[1:]) + jout['target'][xl[0]])]
+                json.dump(jout, fd)
+                print [[hex(x) for x in xl] for xl in branch_targets]
 

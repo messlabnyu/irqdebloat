@@ -7,7 +7,6 @@ from string import Formatter
 
 from diffslice import DiffSliceAnalyzer
 
-tracedir = "../log/trace"
 
 ARM_CPU_MODE_USR = 0x10
 ARM_CPU_MODE_FIQ = 0x11
@@ -19,12 +18,6 @@ ARM_CPU_MODE_HYP = 0x1a
 ARM_CPU_MODE_UND = 0x1b
 ARM_CPU_MODE_SYS = 0x1f
 
-def check_status(line):
-    l = line.split()
-    prev_mode = int(l[-1], 16)
-    cur_mode = int(l[2][:-1], 16)
-    return (cur_mode == ARM_CPU_MODE_SVC and prev_mode == ARM_CPU_MODE_IRQ)
-
 class TraceBucket(object):
     def __init__(self, tr=None):
         self.traces = set([tr]) if tr else set()
@@ -35,29 +28,11 @@ class TraceBucket(object):
     def getone(self):
         return next(iter(self.traces))
 
-# use simple hash to deduplicate traces
-trace_buckets = dict()
-for curdir,_,traces in os.walk(tracedir):
-    for tr in traces:
-        if not tr.startswith("trace_"):
-            continue
-        trpath = os.path.join(curdir, tr)
-        with open(trpath, 'r') as fd:
-            if not check_status(fd.readline()):
-                continue
-            # normalize qemu trace log
-            normtr = re.sub("Trace 0x[0-9a-f]*", "Trace ", fd.read())
-            tag = hashlib.sha1(normtr).hexdigest()
-        if tag in trace_buckets:
-            trace_buckets[tag].update(trpath)
-        else:
-            trace_buckets[tag] = TraceBucket(trpath)
-
-for h,tb in trace_buckets.iteritems():
-    if tb.count()>1:
-        print(h)
-        print(tb.traces)
-print(len(trace_buckets))
+def check_status(line):
+    l = line.split()
+    prev_mode = int(l[-1], 16)
+    cur_mode = int(l[2][:-1], 16)
+    return (cur_mode == ARM_CPU_MODE_SVC and prev_mode == ARM_CPU_MODE_IRQ)
 
 def parse_trace(tracefile):
     with open(tracefile, 'r') as fd:
@@ -79,14 +54,47 @@ def parse_trace(tracefile):
             break
     return trace
 
+
+tracedir = "../log/trace"
+tracedir = "../log/testsub"
+
+kernelfile = "/data/tonyhu/irq/log/home/moyix/bbb/build/tmp/work/beaglebone-poky-linux-gnueabi/linux-stable/5.7.14-r0/build/vmlinux"
+kernelfile = "/data/tonyhu/irq/instrument/vmlinux"
+outdir = "/data/tonyhu/irq/log/diffout"
+outdir = "/data/tonyhu/irq/log/testout"
+
+
+# use simple hash to deduplicate traces
+trace_buckets = dict()
+for curdir,_,traces in os.walk(tracedir):
+    for tr in traces:
+        if not tr.startswith("trace_"):
+            continue
+        if tr.endswith(".pre"):
+            continue
+        trpath = os.path.join(curdir, tr)
+        with open(trpath, 'r') as fd:
+            if not check_status(fd.readline()):
+                continue
+            # normalize qemu trace log
+            normtr = re.sub("Trace 0x[0-9a-f]*", "Trace ", fd.read())
+            tag = hashlib.sha1(normtr).hexdigest()
+        if tag in trace_buckets:
+            trace_buckets[tag].update(trpath)
+        else:
+            trace_buckets[tag] = TraceBucket(trpath)
+
+for h,tb in trace_buckets.iteritems():
+    if tb.count()>1:
+        print(h)
+        print(tb.traces)
+print(len(trace_buckets))
+
 tracefiles = [trace_buckets[f].getone() for f in trace_buckets.keys()]
 #tracefiles = ["../log/trace/trace_13.log", "../log/trace/trace_347.log"]
 #tracefiles = ["../log/trace/trace_93.log", "../log/trace/trace_347.log"]
 #tracefiles = ["../log/trace/trace_93.log", "../log/trace/trace_361.log"]
 #tracefiles = ["../log/trace/trace_93.log", "../log/trace/trace_1.log"]
-kernelfile = "/data/tonyhu/irq/log/home/moyix/bbb/build/tmp/work/beaglebone-poky-linux-gnueabi/linux-stable/5.7.14-r0/build/vmlinux"
-kernelfile = "/data/tonyhu/irq/log/linux/vmlinux"
-outdir = "/data/tonyhu/irq/log/diffout"
 
 traces = []
 for tf in tracefiles:
