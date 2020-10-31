@@ -39,6 +39,7 @@ void uninit_plugin(void *);
 std::set<uint64_t> ioaddrs_seen;
 std::deque<uint64_t> iovals;
 uint32_t label_number = 1;
+static int start_new_irq = 0;
 
 bool interrupt = false;
 bool fiq = false;
@@ -72,13 +73,17 @@ static void ioread(CPUState *env, target_ulong pc, hwaddr addr, uint32_t size, u
     static int fd = -1;
     CPUArchState *cpu = (CPUArchState *)env->env_ptr;
     if (fd == -1) fd = open("/dev/urandom", O_RDONLY);
-    ioaddrs_seen.insert(addr);
+    //ioaddrs_seen.insert(addr);
     if (!iovals.empty()) {
         *val = iovals.front();
         iovals.pop_front();
     }
     else {
         assert(read(fd, val, sizeof(*val)) > 0);
+    }
+    if (start_new_irq) {
+        *val = (1 << ((*val)&0x3f)) | (1 << (((*val)>>8)&0x1f));
+        start_new_irq = 0;
     }
 #ifdef TARGET_ARM
     ioseq.emplace_back(
@@ -152,6 +157,9 @@ static int before_block_exec(CPUState *env, TranslationBlock *tb) {
 
             trace_count++;
             num_blocks = 0;
+
+            if (cpu_mode != ARM_CPU_MODE_ABT)
+                start_new_irq = 1;
         }
         break;
     default:
