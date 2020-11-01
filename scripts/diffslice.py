@@ -191,7 +191,7 @@ class DiffSliceAnalyzer(object):
         if os.path.exists(donelog):
             with open(donelog, 'r') as fd:
                 pre_trace = json.load(fd)
-        new_traces = [tr for tr in raw_traces if tr['dir'] not in pre_trace['traces']]
+        new_traces = [tr for tr in raw_traces if os.path.abspath(tr['dir']) not in pre_trace['traces']]
 
         # pre load traces
         for tr in pre_trace['traces']:

@@ -56,12 +56,12 @@ def parse_trace(tracefile):
 
 
 tracedir = "../log/trace"
-tracedir = "../log/testsub"
+tracedir = "../log/raspi_trace"
 
 kernelfile = "/data/tonyhu/irq/log/home/moyix/bbb/build/tmp/work/beaglebone-poky-linux-gnueabi/linux-stable/5.7.14-r0/build/vmlinux"
 kernelfile = "/data/tonyhu/irq/instrument/vmlinux"
 outdir = "/data/tonyhu/irq/log/diffout"
-outdir = "/data/tonyhu/irq/log/testout"
+outdir = "/data/tonyhu/irq/log/raspi_diff"
 
 
 # use simple hash to deduplicate traces
@@ -105,15 +105,25 @@ if os.path.exists(os.path.join(outdir, "done.log")):
     with open(os.path.join(outdir, "done.log"), 'r') as fd:
         done_combo = set(fd.read().strip().split('\n'))
 
-anal = DiffSliceAnalyzer()
-bv = anal.bn_init(kernelfile)
-for tr_x,tr_y in itertools.combinations(traces, 2):
+def debugdiff():
+    anal = DiffSliceAnalyzer()
+    bv = anal.bn_init(kernelfile)
+    for tr_x,tr_y in itertools.combinations(traces, 2):
 
-    key = tr_x['dir']+tr_y['dir']
-    if key in done_combo or (tr_y['dir']+tr_x['dir']) in done_combo:
-        continue
-    done_combo.add(key)
+        key = tr_x['dir']+tr_y['dir']
+        if key in done_combo or (tr_y['dir']+tr_x['dir']) in done_combo:
+            continue
+        done_combo.add(key)
 
-    anal.bn_analyze(bv, [tr_x, tr_y], kernelfile, outdir)
-    with open(os.path.join(outdir, "done.log"), 'w') as fd:
-        fd.write("\n".join(done_combo))
+        anal.bn_analyze(bv, [tr_x, tr_y], kernelfile, outdir)
+        with open(os.path.join(outdir, "done.log"), 'w') as fd:
+            fd.write("\n".join(done_combo))
+
+def diff():
+    anal = DiffSliceAnalyzer()
+    bv = anal.bn_init(kernelfile)
+    anal.bn_analyze(bv, traces, kernelfile, outdir)
+
+if __name__ == "__main__":
+    #debugdiff()
+    diff()
