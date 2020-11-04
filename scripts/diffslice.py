@@ -9,7 +9,8 @@ DEBUG = False
 
 # idea comes from [diffslicing paper](http://bitblaze.cs.berkeley.edu/papers/diffslicing_oakland11.pdf)
 class DiffSliceAnalyzer(object):
-    def diff(self, outdir, trace_wanted, trace_toremove):
+    def diff(self, outdir, trace_wanted, trace_toremove, logEI = False):
+        diverge_ei = []
         trace_ids = [trace_wanted['id'], trace_toremove['id']]
         traces = [trace_wanted['trace'], trace_toremove['trace']]
         vpc = [0 for tr in traces]
@@ -38,6 +39,7 @@ class DiffSliceAnalyzer(object):
         updateei(ei[0], iaddr(traces[0], vpc[0]), ipdom(traces[0], vpc[0]))
         updateei(ei[1], iaddr(traces[1], vpc[1]), ipdom(traces[1], vpc[1]))
         while not endoftrace(vpc, traces):
+            # walk aligned trace
             while ei[0] == ei[1] and not endoftrace(vpc, traces):
                 if iaddr(traces[0], vpc[0]) == iaddr(traces[1], vpc[1]):
                     aligned.append([vpc[0], vpc[1]])
@@ -59,12 +61,19 @@ class DiffSliceAnalyzer(object):
                     print hex(iaddr(traces[1], vpc[1]))
                 else:
                     print "None"
+            # log EI stack
+            if logEI and not endoftrace(vpc, traces):
+                ei_index = min(len(ei[0]), len(ei[1]))
+                while ei[0][:ei_index] != ei[1][:ei_index]:
+                    ei_index -= 1
+                diverge_ei.append(ei[0][:ei_index])
             # NOTE(hzh): Sometimes 2 traces exits at different branch, ends up different immediate-postdominators. compare the EI without the last one ipdom
             if ei[0] != ei[1] and ei[0][:-1] == ei[1][:-1]:
                 while not endoftrace(vpc, traces) and iaddr(traces[0], vpc[0]) == iaddr(traces[1], vpc[1]):
                     aligned.append([vpc[0], vpc[1]])
                     proceed(traces, vpc, ei, 0)
                     proceed(traces, vpc, ei, 1)
+            # walk disaligned trace
             while ei[0] != ei[1] and not endoftrace(vpc, traces):
                 # NOTE(hzh): fix the corner case where traces go to complete different branches - we have different EI but the same length
                 if len(ei[0]) == len(ei[1]):
@@ -117,9 +126,10 @@ class DiffSliceAnalyzer(object):
             branch_targets.add((iaddr(traces[1], prev_tr1), iaddr(traces[0], prev_tr0 + 1), iaddr(traces[1], prev_tr1 + 1)))
 
         # output the aligned pair of traces
-        with open(os.path.join(outdir, "aligned_{:d}_{:d}.json".format(*trace_ids)), 'w') as fd:
-            json.dump({'aligned': aligned, 'diverge': diverge}, fd)
-        return (diverge, aligned, branch_targets)
+        if outdir:
+            with open(os.path.join(outdir, "aligned_{:d}_{:d}.json".format(*trace_ids)), 'w') as fd:
+                json.dump({'aligned': aligned, 'diverge': diverge}, fd)
+        return (diverge, aligned, branch_targets, diverge_ei)
 
     def analyze(self):
         # load BN output
@@ -246,7 +256,7 @@ class DiffSliceAnalyzer(object):
 
             idx = int(tr_x.split('_')[-1].split('.')[0])
             idy = int(tr_y.split('_')[-1].split('.')[0])
-            diverge, aligned, targets = self.diff(
+            diverge, aligned, targets, _ = self.diff(
                     outdir,
                     {'trace': final_traces[tr_x], 'id': idx},
                     {'trace': final_traces[tr_y], 'id': idy})
