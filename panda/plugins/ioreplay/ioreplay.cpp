@@ -38,8 +38,10 @@ void uninit_plugin(void *);
 
 std::set<uint64_t> ioaddrs_seen;
 std::deque<uint64_t> iovals;
+std::deque<uint64_t> l1_nums, l2_nums, l3_nums;
 uint32_t label_number = 1;
-static int start_new_irq = 0;
+#define HWIRQ_FUZZ_TRY  3
+static int start_new_irq = HWIRQ_FUZZ_TRY;
 
 bool interrupt = false;
 bool fiq = false;
@@ -82,8 +84,25 @@ static void ioread(CPUState *env, target_ulong pc, hwaddr addr, uint32_t size, u
         assert(read(fd, val, sizeof(*val)) > 0);
     }
     if (start_new_irq) {
-        *val = (1 << ((*val)&0x3f)) | (1 << (((*val)>>8)&0x1f));
-        start_new_irq = 0;
+        //*val = (1 << ((*val)&0x3f)) | (1 << (((*val)>>8)&0x1f));
+        switch(start_new_irq) {
+        case HWIRQ_FUZZ_TRY:
+            if (!l1_nums.empty())
+                *val = l1_nums[(*val)%l1_nums.size()];
+            break;
+        case HWIRQ_FUZZ_TRY-1:
+            if (!l2_nums.empty())
+                *val = l2_nums[(*val)%l2_nums.size()];
+            break;
+        case HWIRQ_FUZZ_TRY-2:
+            if (!l3_nums.empty())
+                *val = l3_nums[(*val)%l3_nums.size()];
+            break;
+        }
+
+        start_new_irq--;
+        //*val = (1 << 8);
+        //start_new_irq = 0;
     }
 #ifdef TARGET_ARM
     ioseq.emplace_back(
@@ -159,7 +178,7 @@ static int before_block_exec(CPUState *env, TranslationBlock *tb) {
             num_blocks = 0;
 
             if (cpu_mode != ARM_CPU_MODE_ABT)
-                start_new_irq = 1;
+                start_new_irq = HWIRQ_FUZZ_TRY;
         }
         break;
     default:
@@ -197,6 +216,21 @@ bool init_plugin(void *self) {
     ioreplay_debug = panda_parse_bool(args, "debug");
     limit_trace = panda_parse_bool(args, "tracelimit");
     tracedir = panda_parse_string(args, "tracedir", "../log/trace");
+    const char *l1 = panda_parse_string(args, "l1", "");
+    ss.str(l1);
+    while (std::getline(ss, s, '|')) {
+        l1_nums.push_back(strtoul(s.c_str(), NULL, 16));
+    }
+    const char *l2 = panda_parse_string(args, "l2", "");
+    ss.str(l2);
+    while (std::getline(ss, s, '|')) {
+        l2_nums.push_back(strtoul(s.c_str(), NULL, 16));
+    }
+    const char *l3 = panda_parse_string(args, "l3", "");
+    ss.str(l3);
+    while (std::getline(ss, s, '|')) {
+        l3_nums.push_back(strtoul(s.c_str(), NULL, 16));
+    }
 
     panda_cb pcb = { .unassigned_io_read = ioread };
     panda_register_callback(self, PANDA_CB_UNASSIGNED_IO_READ, pcb);
