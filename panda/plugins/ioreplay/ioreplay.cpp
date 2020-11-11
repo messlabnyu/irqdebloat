@@ -39,6 +39,10 @@ void uninit_plugin(void *);
 std::set<uint64_t> ioaddrs_seen;
 std::deque<uint64_t> iovals;
 std::deque<uint64_t> l1_nums, l2_nums, l3_nums;
+bool enum_l1 = false, enum_l2 = false, enum_l3 = false;
+uint64_t l1index = 0, l2index = 0, l3index = 0;
+uint64_t l1cycle = 0, l2cycle = 0, l3cycle = 0;
+bool l1cycle_updated = false, l2cycle_updated = false, l3cycle_updated = false;
 uint32_t label_number = 1;
 #define HWIRQ_FUZZ_TRY  3
 static int start_new_irq = HWIRQ_FUZZ_TRY;
@@ -87,16 +91,53 @@ static void ioread(CPUState *env, target_ulong pc, hwaddr addr, uint32_t size, u
         //*val = (1 << ((*val)&0x3f)) | (1 << (((*val)>>8)&0x1f));
         switch(start_new_irq) {
         case HWIRQ_FUZZ_TRY:
-            if (!l1_nums.empty())
-                *val = l1_nums[(*val)%l1_nums.size()];
+            if (enum_l1) {
+                *val = l1_nums[l1index++];
+                l1cycle_updated = false;
+                if (l1index == l1_nums.size()) {
+                    l1cycle++;
+                    l1cycle_updated = true;
+                    l1index = 0;
+                }
+            } else {
+                if (!l1_nums.empty())
+                    *val = l1_nums[(*val)%l1_nums.size()];
+            }
             break;
         case HWIRQ_FUZZ_TRY-1:
-            if (!l2_nums.empty())
-                *val = l2_nums[(*val)%l2_nums.size()];
+            if (enum_l2) {
+                *val = l2_nums[l2index];
+                if (l1cycle_updated)
+                    l2index++;
+                l2cycle_updated = false;
+                if (l2index == l2_nums.size()) {
+                    l2cycle++;
+                    l2cycle_updated = true;
+                    l2index = 0;
+                    l1index = 0;
+                }
+            } else {
+                if (!l2_nums.empty())
+                    *val = l2_nums[(*val)%l2_nums.size()];
+            }
             break;
         case HWIRQ_FUZZ_TRY-2:
-            if (!l3_nums.empty())
-                *val = l3_nums[(*val)%l3_nums.size()];
+            if (enum_l3) {
+                *val = l3_nums[l3index];
+                if (l2cycle_updated)
+                    l3index++;
+                l3cycle_updated = false;
+                if (l3index == l3_nums.size()) {
+                    l3cycle++;
+                    l3cycle_updated = true;
+                    l3index = 0;
+                    l2index = 0;
+                    l1index = 0;
+                }
+            } else {
+                if (!l3_nums.empty())
+                    *val = l3_nums[(*val)%l3_nums.size()];
+            }
             break;
         }
 
@@ -149,18 +190,6 @@ static int before_block_exec(CPUState *env, TranslationBlock *tb) {
             fprintf(stderr, "DEBUG [%x] cpsr %x, prev %x\n", cpu->regs[15], cpsr_read(cpu), prev_cpu_mode);
             qemu_log_flush();
 
-            if (qemu_clock_get_ms(QEMU_CLOCK_REALTIME) - start_time > MAX_TRACE_TIMER_MS) {
-                printf("Done with ioreplay (max time %d ms)\n", MAX_TRACE_TIMER_MS);
-                exit(0);
-            }
-
-            //qemu_loglevel |= CPU_LOG_TB_IN_ASM|CPU_LOG_INT|CPU_LOG_TB_CPU;
-            qemu_loglevel |= CPU_LOG_EXEC|CPU_LOG_TB_NOCHAIN;
-            char *newlog = g_strdup_printf("%s/trace_%lld.log", tracedir, trace_count);
-            qemu_set_log_filename(newlog, nullptr);
-            qemu_log("cpu mode: %x, prev: %x\n", cpu_mode, prev_cpu_mode);
-            qemu_log("Trace [0: %08x] cpsr %x, prev %x\n", cpu->regs[15], cpsr_read(cpu), prev_cpu_mode);
-
             // log io vals
             if (!ioseq.empty() && trace_count) {    // ignores any io before actually started logging traces
                 char *iolog = g_strdup_printf("%s/iovals_%ld.log", tracedir, trace_count-1);
@@ -173,6 +202,37 @@ static int before_block_exec(CPUState *env, TranslationBlock *tb) {
                 g_free(iolog);
             }
             ioseq.clear();
+
+
+            // check exit
+            if (!enum_l1 && !enum_l2 && !enum_l3) {
+                if (qemu_clock_get_ms(QEMU_CLOCK_REALTIME) - start_time > MAX_TRACE_TIMER_MS) {
+                    printf("Done with ioreplay (max time %d ms)\n", MAX_TRACE_TIMER_MS);
+                    exit(0);
+                }
+            } else if (enum_l3) {   // l3 cycle detection in the highest priority
+                if (l3cycle) {
+                    printf("Done l3 irq replay\n");
+                    exit(0);
+                }
+            } else if (enum_l2) {
+                if (l2cycle) {
+                    printf("Done l2 irq replay\n");
+                    exit(0);
+                }
+            } else if (enum_l1) {
+                if (l1cycle) {
+                    printf("Done l1 irq replay\n");
+                    exit(0);
+                }
+            }
+
+            //qemu_loglevel |= CPU_LOG_TB_IN_ASM|CPU_LOG_INT|CPU_LOG_TB_CPU;
+            qemu_loglevel |= CPU_LOG_EXEC|CPU_LOG_TB_NOCHAIN;
+            char *newlog = g_strdup_printf("%s/trace_%lld.log", tracedir, trace_count);
+            qemu_set_log_filename(newlog, nullptr);
+            qemu_log("cpu mode: %x, prev: %x\n", cpu_mode, prev_cpu_mode);
+            qemu_log("Trace [0: %08x] cpsr %x, prev %x\n", cpu->regs[15], cpsr_read(cpu), prev_cpu_mode);
 
             trace_count++;
             num_blocks = 0;
@@ -198,6 +258,23 @@ void after_machine_init(CPUState *env) {
             (fiq ? CPU_INTERRUPT_FIQ : 0));
 }
 
+static void prepare_enum(std::deque<uint64_t> &preirq) {
+    for (int i = 0; i < 32; i++)
+        for (int j = i; j < 32; j++)
+            preirq.push_back((1 << i)|(1 << j));
+}
+
+static void prepare_hwirq(std::deque<uint64_t> &preirq, panda_arg_list *args, const char *id, bool do_enum) {
+    std::istringstream ss(panda_parse_string(args, id, ""));
+    std::string s;
+    while (std::getline(ss, s, '|')) {
+        preirq.push_back(strtoul(s.c_str(), NULL, 16));
+    }
+    if (do_enum && preirq.empty()) {
+        prepare_enum(preirq);
+    }
+}
+
 bool init_plugin(void *self) {
     panda_require("loadstate");
     if (!init_loadstate_api()) return false;
@@ -216,21 +293,12 @@ bool init_plugin(void *self) {
     ioreplay_debug = panda_parse_bool(args, "debug");
     limit_trace = panda_parse_bool(args, "tracelimit");
     tracedir = panda_parse_string(args, "tracedir", "../log/trace");
-    const char *l1 = panda_parse_string(args, "l1", "");
-    ss.str(l1);
-    while (std::getline(ss, s, '|')) {
-        l1_nums.push_back(strtoul(s.c_str(), NULL, 16));
-    }
-    const char *l2 = panda_parse_string(args, "l2", "");
-    ss.str(l2);
-    while (std::getline(ss, s, '|')) {
-        l2_nums.push_back(strtoul(s.c_str(), NULL, 16));
-    }
-    const char *l3 = panda_parse_string(args, "l3", "");
-    ss.str(l3);
-    while (std::getline(ss, s, '|')) {
-        l3_nums.push_back(strtoul(s.c_str(), NULL, 16));
-    }
+    enum_l1 = panda_parse_bool(args, "enuml1");
+    enum_l2 = panda_parse_bool(args, "enuml2");
+    enum_l3 = panda_parse_bool(args, "enuml3");
+    prepare_hwirq(l1_nums, args, "l1", enum_l1);
+    prepare_hwirq(l2_nums, args, "l2", enum_l2);
+    prepare_hwirq(l3_nums, args, "l3", enum_l3);
 
     panda_cb pcb = { .unassigned_io_read = ioread };
     panda_register_callback(self, PANDA_CB_UNASSIGNED_IO_READ, pcb);
