@@ -14,7 +14,7 @@ PANDAENDCOMMENT */
 // This needs to be defined before anything is included in order to get
 // the PRIx64 macro
 #define __STDC_FORMAT_MACROS
-#define MAX_BLOCKS 1000000
+#define MAX_BLOCKS 100000
 
 #include "panda/plugin.h"
 #include "panda/plugin_plugin.h"
@@ -162,6 +162,8 @@ static void top_loop(CPUState *cpu) {
 extern bool panda_exit_loop;
 static bool before_block_exec_invalidate_opt(CPUState *cpu, TranslationBlock *tb) {
     num_blocks++;
+    //CPUArchState *c = (CPUArchState *)cpu->env_ptr;
+    //fprintf(stderr, "DEBUG bb exec %x[%lld:%x]\n", c->regs[15], num_blocks, c->uncached_cpsr&CPSR_M);
     if (limit_trace && qemu_loglevel && num_blocks > MAX_BLOCKS) {
         panda_exit_loop = true;
         printf("Truncate Trace (max block number exceeded)\n");
@@ -186,7 +188,7 @@ static int before_block_exec(CPUState *env, TranslationBlock *tb) {
         // ignore the very initial exectution
         if (!prev_cpu_mode) break;
         // cpu_mode changed to FIQ/IRQ/SVC indicates entering interrupt handling
-        if (cpu_mode^prev_cpu_mode) {
+        if (cpu_mode^prev_cpu_mode || cpu->regs[15] == 0xffff0018/*IRQ_ENTRY*/) {
             fprintf(stderr, "DEBUG [%x] cpsr %x, prev %x\n", cpu->regs[15], cpsr_read(cpu), prev_cpu_mode);
             qemu_log_flush();
 
