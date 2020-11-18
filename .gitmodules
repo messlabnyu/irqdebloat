@@ -34,3 +34,6 @@
 [submodule "roms/skiboot"]
 	path = roms/skiboot
 	url = git://git.qemu.org/skiboot.git
+[submodule "scripts/instrument"]
+	path = scripts/instrument
+	url = git@github.com:HighW4y2H3ll/kernel_instrument.git
