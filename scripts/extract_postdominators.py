@@ -220,6 +220,13 @@ def get_return_blocks(return_block_map, bv, raw_trace=None, tracefile=None, infe
     for fun in final_traces.keys():
         if fun not in return_block_map:
             print "Err function:", fun.name, [[hex(addr) for addr in addrs] for addrs in final_traces[fun]]
+            return_block_map[fun] = []
+            addrs = sum(final_traces[fun], [])
+            addrs.sort()
+            for a in addrs:
+                if check_return(bv, fun, a):
+                    basic_block = fun.get_basic_block_at(a)
+                    return_block_map[fun].append(basic_block)
     return final_traces, [tr + image_base for tr in trace['full_trace']]
 
 # DFS to get nodes in postorder, be sure to call this with `touched_node` set to `set()` to avoid any further trouble
@@ -281,8 +288,7 @@ def is_return_inst(function, address):
     for idx in function.get_low_level_il_exits_at(address):
         llil = function.low_level_il[idx]
         if (llil.operation == LowLevelILOperation.LLIL_JUMP_TO or \
-                llil.operation == LowLevelILOperation.LLIL_JUMP) and \
-                llil.dest.operation == LowLevelILOperation.LLIL_POP:
+                llil.operation == LowLevelILOperation.LLIL_JUMP):
             return True
     return False
 
@@ -387,7 +393,7 @@ def reprocess_trace(bv, raw_trace, return_blocks):
             # pop fake trace cb if seen a real return block
             if fake_trace_cb and fake_trace_cb[0][1].start == instaddr:
                 fake_trace_cb.pop(0)
-        # ohh, fuck, this is to fix TCG (basicblock) tracing, TCG bb just goes all the way down as long as there's no
+        # this is to fix TCG (basicblock) tracing, TCG bb just goes all the way down as long as there's no
         # PC redirection. However, in normal sense, bb shoudl be splited if there's a jump to the middle of that bb.
         elif ret_block.end in [bb.start for bb in return_blocks[func]]:
             # get new return block
@@ -484,7 +490,9 @@ def reprocess_trace(bv, raw_trace, return_blocks):
             if inst[1] == prev_func:
                 scanning_trace[tridx][2] = prev_bb
             else:
-                if tridx in intended_return_block:
+                if check_return(bv, inst[1], inst[0]):
+                    prev_bb = scanning_trace[tridx][2] = inst[1].get_basic_block_at(inst[0])
+                elif tridx in intended_return_block:
                     prev_bb = scanning_trace[tridx][2] = intended_return_block[tridx][0]    # suppose any return block should do
             print "Fixing {INST}, {FUNC}, {BB}".format(INST=hex(inst[0]), FUNC=inst[1].name, BB=hex(inst[2].start) if inst[2] else "None")
         if inst:

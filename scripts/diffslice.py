@@ -211,6 +211,7 @@ class DiffSliceAnalyzer(object):
         # pre processing new traces
         return_blocks = {}
         for trace in new_traces:
+            print("Processing : " + trace['dir'])
             grouped_traces, raw_trace = get_return_blocks(return_blocks, bv, raw_trace=trace)
             output_postdominators(return_blocks, postdom_out)
         for trace in new_traces:
