@@ -2,6 +2,7 @@ import os
 import sys
 import json
 import itertools
+from instrument import vm
 
 from extract_postdominators import *
 
@@ -171,9 +172,25 @@ class DiffSliceAnalyzer(object):
         with open(self.outputFile("patch.json"), 'w') as fd:
             json.dump({'locations': [pt for pt in patch_points]}, fd)
 
+    def rawmem_bn_init(self, reg, mem):
+        bv = BinaryViewType['Raw'].open("snapshots/raspi2.mem")
+        bv.store_metadata('ephemeral', {'binaryninja.analysis.max_function_size': 0})
+        bv.platform = Architecture['armv7'].standalone_platform
+        self.mm = vm.VM("snapshots/raspi2.reg", "snapshots/raspi2.mem")
+
+        ev = [0xffff0000+i*4 for i in range(8)]
+        for va in ev:
+            pa = self.mm.translate(va)
+            bv.define_auto_symbol(Symbol(SymbolType.FunctionSymbol, pa, "sub_{:x}".format(pa)))
+            bv.add_function(pa)
+            #bv.create_user_function(pa)
+            bv.update_analysis_and_wait()
+        return bv
+
     def bn_init(self, binfile):
         bv = BinaryViewType['ELF'].open(binfile)
         bv.store_metadata('ephemeral', {'binaryninja.analysis.max_function_size': 0})
+        self.mm = None
         function_map = {}
         for f in bv.functions:
             assert(f.name not in function_map)
@@ -189,7 +206,7 @@ class DiffSliceAnalyzer(object):
         bv.update_analysis_and_wait()
         return bv
 
-    def bn_analyze(self, bv, raw_traces, binfile, outdir):
+    def bn_analyze(self, bv, raw_traces, outdir):
         postdom_out = {}
         final_traces = {}
         trace_out = {}
@@ -210,12 +227,14 @@ class DiffSliceAnalyzer(object):
 
         # pre processing new traces
         return_blocks = {}
+        translated_trace = {}
         for trace in new_traces:
             print("Processing : " + trace['dir'])
-            grouped_traces, raw_trace = get_return_blocks(return_blocks, bv, raw_trace=trace)
+            grouped_traces, raw_trace = get_return_blocks(return_blocks, bv, raw_trace=trace, vm=self.mm)
             output_postdominators(return_blocks, postdom_out)
+            translated_trace[trace['dir']] = raw_trace
         for trace in new_traces:
-            trace_out[os.path.abspath(trace['dir'])] = reprocess_trace(bv, trace['full_trace'], return_blocks)
+            trace_out[os.path.abspath(trace['dir'])] = reprocess_trace(bv, translated_trace[trace['dir']], return_blocks, postdom_out)
 
         immediate_postdoms = find_immediate_postdominator(postdom_out)
         for log,trace in trace_out.iteritems():
@@ -223,14 +242,14 @@ class DiffSliceAnalyzer(object):
             for tr in trace:
                 # make sure any trace inside of a basicblock is marked -1
                 if tr[0] != tr[3]:
-                    final_traces[log].append([tr[0], -1])
+                    final_traces[log].append([tr[0], -1, tr[4]])
                     continue
                 if tr[2] in immediate_postdoms[tr[1]] and tr[3] in immediate_postdoms[tr[1]][tr[2]]:
-                    final_traces[log].append([tr[0], immediate_postdoms[tr[1]][tr[2]][tr[3]]])
+                    final_traces[log].append([tr[0], immediate_postdoms[tr[1]][tr[2]][tr[3]], tr[4]])
                 else:
                     # for incomplete traces, the last few blocks might ended up wrong post-doms
                     print "failed: ", hex(tr[0])
-                    final_traces[log].append([tr[0], -1])
+                    final_traces[log].append([tr[0], -1, tr[4]])
             # log new traces
             if log not in pre_trace['traces']:
                 pre_trace['traces'].append(log)

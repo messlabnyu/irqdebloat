@@ -57,11 +57,21 @@ def parse_trace(tracefile):
 
 tracedir = "../log/trace"
 tracedir = "../log/raspi_trace"
+tracedir = "../log/subtrace"
+tracedir = "../log/irq8_trace"
+tracedir = "../log/linux_enum_l1"
+tracedir = "../log/test"
 
-kernelfile = "/data/tonyhu/irq/log/home/moyix/bbb/build/tmp/work/beaglebone-poky-linux-gnueabi/linux-stable/5.7.14-r0/build/vmlinux"
-kernelfile = "/data/tonyhu/irq/instrument/vmlinux"
-outdir = "/data/tonyhu/irq/log/diffout"
-outdir = "/data/tonyhu/irq/log/raspi_diff"
+kernelfile = "../log/home/moyix/bbb/build/tmp/work/beaglebone-poky-linux-gnueabi/linux-stable/5.7.14-r0/build/vmlinux"
+kernelfile = "../instrument/vmlinux"
+kernelfile = "../log/rpi2_linux/vmlinux"
+regfile = "snapshots/raspi2.reg"
+memfile = "snapshots/raspi2.mem"
+outdir = "../log/diffout"
+outdir = "../log/raspi_diff"
+outdir = "../log/subdiff"
+outdir = "../log/irq8_diff"
+outdir = "../log/linux_enum_l1_diff"
 
 
 # use simple hash to deduplicate traces
@@ -78,6 +88,9 @@ for curdir,_,traces in os.walk(tracedir):
                 continue
             # normalize qemu trace log
             normtr = re.sub("Trace 0x[0-9a-f]*", "Trace ", fd.read())
+            # skip invalid traces
+            if "Stopped execution of TB chain" in normtr:
+                continue
             tag = hashlib.sha1(normtr).hexdigest()
         if tag in trace_buckets:
             trace_buckets[tag].update(trpath)
@@ -115,15 +128,21 @@ def debugdiff():
             continue
         done_combo.add(key)
 
-        anal.bn_analyze(bv, [tr_x, tr_y], kernelfile, outdir)
+        anal.bn_analyze(bv, [tr_x, tr_y], outdir)
         with open(os.path.join(outdir, "done.log"), 'w') as fd:
             fd.write("\n".join(done_combo))
 
 def diff():
     anal = DiffSliceAnalyzer()
     bv = anal.bn_init(kernelfile)
-    anal.bn_analyze(bv, traces, kernelfile, outdir)
+    anal.bn_analyze(bv, traces, outdir)
+
+def diff_rawmem():
+    anal = DiffSliceAnalyzer()
+    bv = anal.rawmem_bn_init(regfile, memfile)
+    anal.bn_analyze(bv, traces, outdir)
 
 if __name__ == "__main__":
     #debugdiff()
-    diff()
+    #diff()
+    diff_rawmem()

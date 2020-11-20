@@ -81,7 +81,7 @@ def fix_switch_table(bv, mal_func):
     Return a list of returning blocks, and a map of functions and a list of traces within the function
 '''
 # TODO(hzh): might have trouble in recursive call - need to verify that later
-def get_return_blocks(return_block_map, bv, raw_trace=None, tracefile=None, infer_return_block=False):
+def get_return_blocks(return_block_map, bv, raw_trace=None, tracefile=None, infer_return_block=False, vm=None):
     if not raw_trace:
         with open(tracefile, 'rb') as fd:
             trace = json.load(fd)
@@ -95,6 +95,8 @@ def get_return_blocks(return_block_map, bv, raw_trace=None, tracefile=None, infe
     local_trace = {}
     for inst in trace['full_trace']:
         instaddr = inst + image_base
+        if vm:
+            instaddr = vm.translate(instaddr)
         fun = bv.get_functions_containing(instaddr)
         # this might be unresolved .plt entry
         if not fun:
@@ -227,7 +229,12 @@ def get_return_blocks(return_block_map, bv, raw_trace=None, tracefile=None, infe
                 if check_return(bv, fun, a):
                     basic_block = fun.get_basic_block_at(a)
                     return_block_map[fun].append(basic_block)
-    return final_traces, [tr + image_base for tr in trace['full_trace']]
+    if vm:
+        return final_traces, \
+                {'va': [tr + image_base for tr in trace['full_trace']], \
+                 'pa': [vm.translate(tr+image_base) for tr in trace['full_trace']]}
+    else:
+        return final_traces, {'va': [tr + image_base for tr in trace['full_trace']]}
 
 # DFS to get nodes in postorder, be sure to call this with `touched_node` set to `set()` to avoid any further trouble
 def build_postordering(node, touched_node=set()):
@@ -310,7 +317,8 @@ def check_return(bv, function, address):
         iaddr += bv.get_instruction_length(iaddr)
     return None
 
-def reprocess_trace(bv, raw_trace, return_blocks):
+def reprocess_trace(bv, raw_trace, return_blocks, postdom_out):
+    translated = 'pa' in raw_trace
     out_trace = []
     scanning_trace = [None]
     trace_index = 0
@@ -320,12 +328,15 @@ def reprocess_trace(bv, raw_trace, return_blocks):
     instr_counter = 0
     cur_function = None
     intended_return_block = {}
-    while trace_index < len(raw_trace):
+    while trace_index < len(raw_trace['va']):
         if shadow_instr:
             instaddr = shadow_instr
             shadow_instr = None
         else:
-            instaddr = raw_trace[trace_index]
+            if translated:
+                instaddr = raw_trace['pa'][trace_index]
+            else:
+                instaddr = raw_trace['va'][trace_index]
         functions = bv.get_functions_containing(instaddr)
         callstack_size = len(prev_func)
         if DEBUG:
@@ -373,11 +384,28 @@ def reprocess_trace(bv, raw_trace, return_blocks):
             # return out of the function
             if fake_trace_cb[0][0] != func and callstack_size >= len(prev_func):
                 _, rb = fake_trace_cb.pop(0)
-                scanning_trace.append([rb.start, func, rb, rb.start])
+                scanning_trace.append([rb.start, func, rb, rb.start, -1])   # probably fine with vaddr=-1, it's return block anyway. won't be the diverge point
 
         # push a guard entry into the trace to indicate a control-flow change
         if prev_func[-1][0] != func and scanning_trace[-1] != None:
             scanning_trace.append(None)
+
+        # BN tends to have wanky behavior that truncates a basicblock in a function if another new function is created
+        # that have a jump in the middle of that basicblock. The rest part of the basicblock will no longer appear in
+        # the original function (also references etc). And that would gives us an entirely new function here which has
+        # note previously registered in the `return_blocks`. This is probably caused by inline macros that certain code
+        # block have multiple entries.
+        if func not in return_blocks:
+            temp_ret_blocks = {}
+            temp_postdom_out = {}
+            get_return_blocks(temp_ret_blocks, bv, raw_trace={'full_trace': [instaddr]})
+            output_postdominators(temp_ret_blocks, temp_postdom_out)
+            return_blocks[func] = temp_ret_blocks[func]
+            for key in temp_postdom_out:
+                if key not in postdom_out:
+                    postdom_out[key] = temp_postdom_out[key].copy()
+                else:   # shouldn't reach this, but anyway
+                    postdom_out[key].update(temp_postdom_out[key])
 
         # check if we're at return block
         # NOTE(hzh): fix to compare BasicBlock with start address, looks like a problem in BN, Version 1.1.1339
@@ -389,7 +417,7 @@ def reprocess_trace(bv, raw_trace, return_blocks):
                     scanning_trace[index][2] = ret_block
                 if scanning_trace[index] and scanning_trace[index][0] == func.start:
                     break
-            scanning_trace.append([instaddr, func, ret_block, ret_block.start])
+            scanning_trace.append([instaddr, func, ret_block, ret_block.start, raw_trace['va'][trace_index]])
             # pop fake trace cb if seen a real return block
             if fake_trace_cb and fake_trace_cb[0][1].start == instaddr:
                 fake_trace_cb.pop(0)
@@ -404,7 +432,7 @@ def reprocess_trace(bv, raw_trace, return_blocks):
                     scanning_trace[index][2] = rb
                 if scanning_trace[index] and scanning_trace[index][0] == func.start:
                     break
-            scanning_trace.append([instaddr, func, rb, ret_block.start])
+            scanning_trace.append([instaddr, func, rb, ret_block.start, raw_trace['va'][trace_index]])
             # if we seen it in the middle of a basicblock, we might already registered it before, remove the old registary
             for i in reversed(range(len(fake_trace_cb))):
                 if fake_trace_cb[i][0] == func and fake_trace_cb[i][1].start == rb.start:
@@ -415,7 +443,7 @@ def reprocess_trace(bv, raw_trace, return_blocks):
             if DEBUG:
                 print "add fake trace : ", hex(instaddr), " : ", func, rb
         else:
-            scanning_trace.append([instaddr, func, None, ret_block.start])
+            scanning_trace.append([instaddr, func, None, ret_block.start, raw_trace['va'][trace_index]])
             intended_return_block[len(scanning_trace)-1] = return_blocks[func]
 
             # yet again the TCG bb discrepancy, however, only considering the adjecent next (normal) basicblock here
@@ -450,7 +478,7 @@ def reprocess_trace(bv, raw_trace, return_blocks):
 
 
         if (instr_counter % 10000) == 0:
-            print "Re-Processed {COUNT}/{TOTAL}".format(COUNT=instr_counter, TOTAL=len(raw_trace))
+            print "Re-Processed {COUNT}/{TOTAL}".format(COUNT=instr_counter, TOTAL=len(raw_trace['va']))
 
         if not shadow_instr:
             trace_index += 1
@@ -497,7 +525,7 @@ def reprocess_trace(bv, raw_trace, return_blocks):
             print "Fixing {INST}, {FUNC}, {BB}".format(INST=hex(inst[0]), FUNC=inst[1].name, BB=hex(inst[2].start) if inst[2] else "None")
         if inst:
             prev_func = inst[1]
-    return [[tr[0], tr[1], tr[2].start if tr[2] else None, tr[3]] for tr in scanning_trace if tr]
+    return [[tr[0], tr[1], tr[2].start if tr[2] else None, tr[3], tr[4]] for tr in scanning_trace if tr]
 
 
 def find_immediate_postdominator(postdoms):
