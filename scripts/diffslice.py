@@ -26,6 +26,8 @@ class DiffSliceAnalyzer(object):
             return tr[idx][1] if tr[idx][1] != -1 else None
         def iaddr(tr, idx):
             return tr[idx][0]
+        def vaddr(tr, idx):
+            return tr[idx][0]
         def updateei(ei, pc, ipd):
             while ei and ei[-1][0] == pc:
                 ei.pop()
@@ -107,8 +109,9 @@ class DiffSliceAnalyzer(object):
                 pass
             else:
                 assert(iaddr(traces[0], prev_tr0) == iaddr(traces[1], prev_tr1))
-                diverge.append(iaddr(traces[0], prev_tr0))
-                branch_targets.add((iaddr(traces[1], prev_tr1), iaddr(traces[0], tr0), iaddr(traces[1], prev_tr1 + 1)))
+                diverge.append((iaddr(traces[0], prev_tr0), vaddr(traces[0], prev_tr0)))
+                branch_targets.add((iaddr(traces[1], prev_tr1), iaddr(traces[0], tr0), iaddr(traces[1], prev_tr1 + 1), \
+                        vaddr(traces[0], tr0), vaddr(traces[1], prev_tr1 + 1)))
                 prev_tr0 = tr0
                 prev_tr1 = tr1
                 continue
@@ -117,14 +120,16 @@ class DiffSliceAnalyzer(object):
                 prev_tr0 = tr0
             else:
                 assert(iaddr(traces[0], prev_tr0) == iaddr(traces[1], prev_tr1))
-                diverge.append(iaddr(traces[0], prev_tr0))
-                branch_targets.add((iaddr(traces[1], prev_tr1), iaddr(traces[0], tr0), iaddr(traces[1], prev_tr1 + 1)))
+                diverge.append((iaddr(traces[0], prev_tr0), vaddr(traces[0], prev_tr0)))
+                branch_targets.add((iaddr(traces[1], prev_tr1), iaddr(traces[0], tr0), iaddr(traces[1], prev_tr1 + 1), \
+                        vaddr(traces[0], tr0), vaddr(traces[1], prev_tr1 + 1)))
                 prev_tr0 = tr0
                 prev_tr1 = tr1
         assert(iaddr(traces[0], prev_tr0) == iaddr(traces[1], prev_tr1))
         if not endoftrace([prev_tr0 + 1, prev_tr1 + 1], traces):
-            diverge.append(iaddr(traces[0], prev_tr0))
-            branch_targets.add((iaddr(traces[1], prev_tr1), iaddr(traces[0], prev_tr0 + 1), iaddr(traces[1], prev_tr1 + 1)))
+            diverge.append((iaddr(traces[0], prev_tr0), vaddr(traces[0], prev_tr0)))
+            branch_targets.add((iaddr(traces[1], prev_tr1), iaddr(traces[0], prev_tr0 + 1), iaddr(traces[1], prev_tr1 + 1), \
+                    vaddr(traces[0], tr0), vaddr(traces[1], prev_tr1 + 1)))
 
         # output the aligned pair of traces
         if outdir:
@@ -280,11 +285,11 @@ class DiffSliceAnalyzer(object):
                     outdir,
                     {'trace': final_traces[tr_x], 'id': idx},
                     {'trace': final_traces[tr_y], 'id': idy})
-            print [hex(x) for x in diverge]
+            print [[hex(x) for x in xl] for xl in diverge]
             diverge_points.difference_update(diverge)
             branch_targets.update(targets)
 
-            patch_points = set([pt[1] for pt in branch_targets if pt[0] in diverge_points])
+            #patch_points = set([pt[1] for pt in branch_targets if pt[0] in diverge_points])
             #with open(os.path.join(outdir, "patch.json"), 'w') as fd:
             #    json.dump({'locations': [pt for pt in patch_points]}, fd)
             with open(os.path.join(outdir, "diverge_{:d}_{:d}.json".format(idx, idy)), 'w') as fd:

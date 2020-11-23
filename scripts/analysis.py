@@ -60,7 +60,6 @@ tracedir = "../log/raspi_trace"
 tracedir = "../log/subtrace"
 tracedir = "../log/irq8_trace"
 tracedir = "../log/linux_enum_l1"
-tracedir = "../log/test"
 
 kernelfile = "../log/home/moyix/bbb/build/tmp/work/beaglebone-poky-linux-gnueabi/linux-stable/5.7.14-r0/build/vmlinux"
 kernelfile = "../instrument/vmlinux"
