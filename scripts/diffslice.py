@@ -181,7 +181,7 @@ class DiffSliceAnalyzer(object):
         bv = BinaryViewType['Raw'].open("snapshots/raspi2.mem")
         bv.store_metadata('ephemeral', {'binaryninja.analysis.max_function_size': 0})
         bv.platform = Architecture['armv7'].standalone_platform
-        self.mm = vm.VM("snapshots/raspi2.reg", "snapshots/raspi2.mem")
+        self.mm = vm.VM(reg, mem)
 
         ev = [0xffff0000+i*4 for i in range(8)]
         for va in ev:
