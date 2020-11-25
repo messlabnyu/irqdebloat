@@ -178,7 +178,7 @@ class DiffSliceAnalyzer(object):
             json.dump({'locations': [pt for pt in patch_points]}, fd)
 
     def rawmem_bn_init(self, reg, mem):
-        bv = BinaryViewType['Raw'].open("snapshots/raspi2.mem")
+        bv = BinaryViewType['Raw'].open(mem)
         bv.store_metadata('ephemeral', {'binaryninja.analysis.max_function_size': 0})
         bv.platform = Architecture['armv7'].standalone_platform
         self.mm = vm.VM(reg, mem)
@@ -189,7 +189,7 @@ class DiffSliceAnalyzer(object):
             bv.define_auto_symbol(Symbol(SymbolType.FunctionSymbol, pa, "sub_{:x}".format(pa)))
             bv.add_function(pa)
             #bv.create_user_function(pa)
-            bv.update_analysis_and_wait()
+        bv.update_analysis_and_wait()
         return bv
 
     def bn_init(self, binfile):
