@@ -32,7 +32,8 @@ def check_status(line):
     l = line.split()
     prev_mode = int(l[-1], 16)
     cur_mode = int(l[2][:-1], 16)
-    return (cur_mode == ARM_CPU_MODE_SVC and prev_mode == ARM_CPU_MODE_IRQ)
+    #return (cur_mode == ARM_CPU_MODE_SVC and prev_mode == ARM_CPU_MODE_IRQ)
+    return cur_mode == ARM_CPU_MODE_IRQ
 
 def parse_trace(tracefile):
     with open(tracefile, 'r') as fd:
@@ -60,17 +61,22 @@ tracedir = "../log/raspi_trace"
 tracedir = "../log/subtrace"
 tracedir = "../log/irq8_trace"
 tracedir = "../log/linux_enum_l1"
+tracedir = "../log/riscpi_enum_l1"
 
-kernelfile = "../log/home/moyix/bbb/build/tmp/work/beaglebone-poky-linux-gnueabi/linux-stable/5.7.14-r0/build/vmlinux"
-kernelfile = "../instrument/vmlinux"
-kernelfile = "../log/rpi2_linux/vmlinux"
+#kernelfile = "../log/home/moyix/bbb/build/tmp/work/beaglebone-poky-linux-gnueabi/linux-stable/5.7.14-r0/build/vmlinux"
+#kernelfile = "../instrument/vmlinux"
+#kernelfile = "../log/rpi2_linux/vmlinux"
 regfile = "snapshots/raspi2.reg"
 memfile = "snapshots/raspi2.mem"
+regfile = "snapshots/riscpi.reg"
+memfile = "snapshots/riscpi.mem"
+
 outdir = "../log/diffout"
 outdir = "../log/raspi_diff"
 outdir = "../log/subdiff"
 outdir = "../log/irq8_diff"
 outdir = "../log/linux_enum_l1_diff"
+outdir = "../log/riscpi_enum_l1_diff"
 
 
 # use simple hash to deduplicate traces

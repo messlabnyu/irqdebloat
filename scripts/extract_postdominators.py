@@ -288,8 +288,7 @@ def output_postdominators(return_block_map, postdom_out):
                 postdom_out[key].update(out_dom)
 
 def is_call_inst(function, address):
-    return function.get_low_level_il_at(address).operation in \
-            [LowLevelILOperation.LLIL_CALL, LowLevelILOperation.LLIL_CALL_STACK_ADJUST]
+    return function.is_call_instruction(address)
 
 def is_return_inst(function, address):
     for idx in function.get_low_level_il_exits_at(address):
