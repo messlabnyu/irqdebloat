@@ -1,11 +1,13 @@
 import os
 import sys
 import json
+import time
 import itertools
 from instrument import vm
 
 from extract_postdominators import *
 
+PERF = False
 DEBUG = False
 
 # idea comes from [diffslicing paper](http://bitblaze.cs.berkeley.edu/papers/diffslicing_oakland11.pdf)
@@ -235,11 +237,23 @@ class DiffSliceAnalyzer(object):
         translated_trace = {}
         for trace in new_traces:
             print("Processing : " + trace['dir'])
-            grouped_traces, raw_trace = get_return_blocks(return_blocks, bv, raw_trace=trace, vm=self.mm)
+            if PERF:
+                tstart = time.clock()
+            grouped_traces, raw_trace = get_return_blocks(return_blocks, bv, raw_trace=trace, vm=self.mm, perf=PERF)
+            if PERF:
+                print("get_return_blocks done: {}".format(time.clock()-tstart))
+                tstart = time.clock()
             output_postdominators(return_blocks, postdom_out)
+            if PERF:
+                print("output_postdominators done: {}".format(time.clock()-tstart))
             translated_trace[trace['dir']] = raw_trace
         for trace in new_traces:
+            print("Re-Processing trace : " + trace['dir'])
+            if PERF:
+                tstart = time.clock()
             trace_out[os.path.abspath(trace['dir'])] = reprocess_trace(bv, translated_trace[trace['dir']], return_blocks, postdom_out)
+            if PERF:
+                print("reprocess_trace done: {}".format(time.clock()-tstart))
 
         immediate_postdoms = find_immediate_postdominator(postdom_out)
         for log,trace in trace_out.iteritems():

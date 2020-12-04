@@ -28,12 +28,14 @@ class TraceBucket(object):
     def getone(self):
         return next(iter(self.traces))
 
-def check_status(line):
+def check_status(line, mode='linux'):
     l = line.split()
     prev_mode = int(l[-1], 16)
     cur_mode = int(l[2][:-1], 16)
-    #return (cur_mode == ARM_CPU_MODE_SVC and prev_mode == ARM_CPU_MODE_IRQ)
-    return cur_mode == ARM_CPU_MODE_IRQ
+    if mode == 'linux':
+        return (cur_mode == ARM_CPU_MODE_SVC and prev_mode == ARM_CPU_MODE_IRQ)
+    else:   # RiscOS
+        return cur_mode == ARM_CPU_MODE_IRQ
 
 def parse_trace(tracefile):
     with open(tracefile, 'r') as fd:

@@ -81,7 +81,7 @@ def fix_switch_table(bv, mal_func):
     Return a list of returning blocks, and a map of functions and a list of traces within the function
 '''
 # TODO(hzh): might have trouble in recursive call - need to verify that later
-def get_return_blocks(return_block_map, bv, raw_trace=None, tracefile=None, infer_return_block=False, vm=None):
+def get_return_blocks(return_block_map, bv, raw_trace=None, tracefile=None, infer_return_block=False, vm=None, perf=False):
     if not raw_trace:
         with open(tracefile, 'rb') as fd:
             trace = json.load(fd)
@@ -97,15 +97,18 @@ def get_return_blocks(return_block_map, bv, raw_trace=None, tracefile=None, infe
         instaddr = inst + image_base
         if vm:
             instaddr = vm.translate(instaddr)
+        if perf:
+            print(" >[", hex(instaddr), "] ")
+            timecheck = time.clock()
         fun = bv.get_functions_containing(instaddr)
-        # this might be unresolved .plt entry
-        if not fun:
-            for sec in bv.get_sections_at(instaddr):
-                if sec.name == '.plt' and instaddr >= sec.start and instaddr < sec.end:
-                    bv.add_function(instaddr)
-                    bv.update_analysis_and_wait()
-                    fun = bv.get_functions_containing(instaddr)
-                    break
+        ## this might be unresolved .plt entry
+        #if not fun:
+        #    for sec in bv.get_sections_at(instaddr):
+        #        if sec.name == '.plt' and instaddr >= sec.start and instaddr < sec.end:
+        #            bv.add_function(instaddr)
+        #            bv.update_analysis_and_wait()
+        #            fun = bv.get_functions_containing(instaddr)
+        #            break
         # this might be a switch table
         if inst_lookahead and not fun:
             fix_switch_table(bv, bv.get_functions_containing(inst_lookahead)[0])
@@ -120,11 +123,19 @@ def get_return_blocks(return_block_map, bv, raw_trace=None, tracefile=None, infe
 
         assert(fun)
 
+        if perf:
+            print(" >Found Function ", time.clock()-timecheck)
+            timecheck = time.clock()
+
         # append all "end" nodes of current function
         for f in fun:
             for bb in f.basic_blocks:
                 if not bb.outgoing_edges or check_return(bv, f, bb.start):
                     return_blocks.add(bb)
+
+        if perf:
+            print(" >> Init Return block Found ", time.clock()-timecheck)
+            timecheck = time.clock()
 
         # NOTE(hzh): BN will get 2 basic blocks given 1 instruction address, we pick one with smaller addr
         #   ```
@@ -140,12 +151,20 @@ def get_return_blocks(return_block_map, bv, raw_trace=None, tracefile=None, infe
             if bb.start == basic_block.start:
                 basic_block_all.append(bb)
 
+        if perf:
+            print(" >> Fixing Binja BB ", time.clock()-timecheck)
+            timecheck = time.clock()
+
         for bb in basic_block_all:
             # the returning/exit block is the block with no outgoing edges
             if not bb.outgoing_edges:
                 #print fun[0].name, hex(inst + image_base), hex(basic_block.start), basic_block.outgoing_edges
                 return_blocks.add(bb)
         inst_lookahead = instaddr
+
+        if perf:
+            print(" >Found Return Block ", time.clock()-timecheck)
+            timecheck = time.clock()
 
         # check if we are still in the function
         func_matched = False
@@ -166,6 +185,10 @@ def get_return_blocks(return_block_map, bv, raw_trace=None, tracefile=None, infe
                 local_trace[f] = [instaddr]
             else:
                 local_trace[f].append(instaddr)
+
+        if perf:
+            print(" >Done Fixingup ", time.clock()-timecheck)
+            timecheck = time.clock()
 
     for bb in return_blocks:
         if bb.function not in return_block_map:
