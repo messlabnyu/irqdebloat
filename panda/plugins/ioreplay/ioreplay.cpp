@@ -69,16 +69,19 @@ static uint64_t start_time = 0;
 // 1 minutes
 #define MAX_TRACE_TIMER_MS  (1*60*1000)
 
-#ifdef TARGET_ARM
 static uint32_t prev_cpu_mode = 0;
 static uint64_t trace_count = 0;
 static std::vector<gchar*> ioseq;
-#endif
 
 static void ioread(CPUState *env, target_ulong pc, hwaddr addr, uint32_t size, uint64_t *val) {
     static int fd = -1;
     CPUArchState *cpu = (CPUArchState *)env->env_ptr;
     if (fd == -1) fd = open("/dev/urandom", O_RDONLY);
+    // Feed random value until IRQ fire for the first time
+    if (!trace_count) {
+        assert(read(fd, val, sizeof(*val)) > 0);
+        return;
+    }
     //ioaddrs_seen.insert(addr);
     if (!iovals.empty()) {
         *val = iovals.front();
