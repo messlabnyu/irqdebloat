@@ -80,52 +80,58 @@ outdir = "../log/irq8_diff"
 outdir = "../log/linux_enum_l1_diff"
 outdir = "../log/riscpi_enum_l1_diff"
 
+ostag = "linux"
+ostag = "riscos"
 
-# use simple hash to deduplicate traces
-trace_buckets = dict()
-for curdir,_,traces in os.walk(tracedir):
-    for tr in traces:
-        if not tr.startswith("trace_"):
-            continue
-        if tr.endswith(".pre"):
-            continue
-        trpath = os.path.join(curdir, tr)
-        with open(trpath, 'r') as fd:
-            if not check_status(fd.readline()):
+
+def preproc_traces():
+    # use simple hash to deduplicate traces
+    trace_buckets = dict()
+    for curdir,_,traces in os.walk(tracedir):
+        for tr in traces:
+            if not tr.startswith("trace_"):
                 continue
-            # normalize qemu trace log
-            normtr = re.sub("Trace 0x[0-9a-f]*", "Trace ", fd.read())
-            # skip invalid traces
-            if "Stopped execution of TB chain" in normtr:
+            if tr.endswith(".pre"):
                 continue
-            tag = hashlib.sha1(normtr).hexdigest()
-        if tag in trace_buckets:
-            trace_buckets[tag].update(trpath)
-        else:
-            trace_buckets[tag] = TraceBucket(trpath)
+            trpath = os.path.join(curdir, tr)
+            with open(trpath, 'r') as fd:
+                if not check_status(fd.readline(), ostag):
+                    continue
+                # normalize qemu trace log
+                normtr = re.sub("Trace 0x[0-9a-f]*", "Trace ", fd.read())
+                # skip invalid traces
+                if "Stopped execution of TB chain" in normtr:
+                    continue
+                tag = hashlib.sha1(normtr).hexdigest()
+            if tag in trace_buckets:
+                trace_buckets[tag].update(trpath)
+            else:
+                trace_buckets[tag] = TraceBucket(trpath)
 
-for h,tb in trace_buckets.iteritems():
-    if tb.count()>1:
-        print(h)
-        print(tb.traces)
-print(len(trace_buckets))
+    for h,tb in trace_buckets.iteritems():
+        if tb.count()>1:
+            print(h)
+            print(tb.traces)
+    print(len(trace_buckets))
 
-tracefiles = [trace_buckets[f].getone() for f in trace_buckets.keys()]
-#tracefiles = ["../log/trace/trace_13.log", "../log/trace/trace_347.log"]
-#tracefiles = ["../log/trace/trace_93.log", "../log/trace/trace_347.log"]
-#tracefiles = ["../log/trace/trace_93.log", "../log/trace/trace_361.log"]
-#tracefiles = ["../log/trace/trace_93.log", "../log/trace/trace_1.log"]
+    tracefiles = [trace_buckets[f].getone() for f in trace_buckets.keys()]
+    #tracefiles = ["../log/trace/trace_13.log", "../log/trace/trace_347.log"]
+    #tracefiles = ["../log/trace/trace_93.log", "../log/trace/trace_347.log"]
+    #tracefiles = ["../log/trace/trace_93.log", "../log/trace/trace_361.log"]
+    #tracefiles = ["../log/trace/trace_93.log", "../log/trace/trace_1.log"]
 
-traces = []
-for tf in tracefiles:
-    traces.append({'dir': tf, 'full_trace': parse_trace(tf)})
-
-done_combo = set()
-if os.path.exists(os.path.join(outdir, "done.log")):
-    with open(os.path.join(outdir, "done.log"), 'r') as fd:
-        done_combo = set(fd.read().strip().split('\n'))
+    traces = []
+    for tf in tracefiles:
+        traces.append({'dir': tf, 'full_trace': parse_trace(tf)})
+    return traces
 
 def debugdiff():
+    traces = preproc_traces()
+    done_combo = set()
+    if os.path.exists(os.path.join(outdir, "done.log")):
+        with open(os.path.join(outdir, "done.log"), 'r') as fd:
+            done_combo = set(fd.read().strip().split('\n'))
+
     anal = DiffSliceAnalyzer()
     bv = anal.bn_init(kernelfile)
     for tr_x,tr_y in itertools.combinations(traces, 2):
@@ -140,6 +146,7 @@ def debugdiff():
             fd.write("\n".join(done_combo))
 
 def diff():
+    traces = preproc_traces()
     anal = DiffSliceAnalyzer()
     bv = anal.bn_init(kernelfile)
     anal.bn_analyze(bv, traces, outdir)
@@ -147,6 +154,22 @@ def diff():
 def diff_rawmem():
     anal = DiffSliceAnalyzer()
     bv = anal.rawmem_bn_init(regfile, memfile)
+
+    traces = preproc_traces()
+    # Truncate traces at user space address
+    vmap = {}
+    for va, pa, sz, prot in anal.mm.walk():
+        assert (va not in vmap)
+        vmap[va] = prot
+    for tr in traces:
+        newtr = []
+        for va in tr['full_trace']:
+            vpg = va&(~anal.mm.page_mask(va))
+            # make sure non-writeable from lower PL (RiscOS fixes)
+            if not vmap[vpg].check_write_pl0():
+                newtr.append(va)
+        tr['full_trace'] = [x for x in newtr]
+
     anal.bn_analyze(bv, traces, outdir)
 
 if __name__ == "__main__":
