@@ -37,23 +37,27 @@ def check_status(line, mode='linux'):
     else:   # RiscOS
         return cur_mode == ARM_CPU_MODE_IRQ
 
-def parse_trace(tracefile):
+def parse_trace(tracefile, dedup=True, tracelimit=True):
     with open(tracefile, 'r') as fd:
         data = fd.read().strip()
     lines = data.split('\n')[1:]    # skip the 1st line
     trace = []
     for l in lines:
+        # Note: ignore Data Abt? or truncate trace here?
+        if l.startswith("Stopped"):
+            break
+
         addr = int(l.split(':')[1].split(']')[0], 16)
         # skip exception vector stub
         if addr&0xffff0000 == 0xffff0000:
             continue
         # deduplicate loop trace
-        if trace and addr == trace[-1]:
+        if dedup and trace and addr == trace[-1]:
             continue
 
         trace.append(addr)
 
-        if len(trace) > 10000:
+        if tracelimit and len(trace) > 10000:
             break
     return trace
 

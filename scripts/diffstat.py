@@ -6,7 +6,8 @@ import json
 import itertools
 
 DIFFOUT_DIR = "/data/tonyhu/irq/log/raspi_diff"
-#DIFFOUT_DIR = "/data/tonyhu/irq/log/subdiff"
+DIFFOUT_DIR = "/data/tonyhu/irq/log/linux_enum_l1_diff"
+DIFFOUT_DIR = "/data/tonyhu/irq/log/riscpi_enum_l1_diff"
 
 diverge_targets = {}
 diverge_trace = {}
@@ -27,7 +28,7 @@ for d,_,files in os.walk(DIFFOUT_DIR):
             assert(iy not in difflog[ix])
             #if iy not in difflog[ix]:
             #    difflog[ix][iy] = []
-            diverges = [int(e) for e in jd['diverge']]
+            diverges = [int(e[0]) for e in jd['diverge']]
             difflog[ix][iy] = [e for e in diverges]
 
             for k in jd['target']:
@@ -60,7 +61,8 @@ for d, t in diverge_targets.items():
 
 
 tracedir = "/data/tonyhu/irq/log/raspi_trace"
-#tracedir = "/data/tonyhu/irq/log/subtrace"
+tracedir = "/data/tonyhu/irq/log/linux_enum_l1"
+tracedir = "/data/tonyhu/irq/log/riscpi_enum_l1"
 
 iovals = {}
 for curdir,_,traces in os.walk(tracedir):
@@ -74,7 +76,7 @@ for curdir,_,traces in os.walk(tracedir):
             ioval = iolog.split("val=")[1]
             iovals[trid] = int(ioval, 16)
 
-from diffslice import DiffSliceAnalyzer
+from analysis import *
 
 anal = DiffSliceAnalyzer()
 
@@ -87,8 +89,6 @@ for curdir,_,traces in os.walk(tracedir):
         with open(tr, 'r') as fd:
             tracelog[tr] = json.load(fd)['trace']
 
-ARM_CPU_MODE_IRQ = 0x12
-ARM_CPU_MODE_SVC = 0x13
 rawtrace = {}   # undedupped trace
 for curdir,_,traces in os.walk(tracedir):
     for trace in traces:
@@ -100,24 +100,9 @@ for curdir,_,traces in os.walk(tracedir):
         idx = trace.split('_')[-1].split('.')[0]
         tr = os.path.abspath(os.path.join(tracedir, trace))
         with open(tr, 'r') as fd:
-            data = fd.read().strip()
-        modeline = data.split('\n')[0]
-        m = modeline.split()
-        prev_mode = int(m[-1], 16)
-        cur_mode = int(m[2][:-1], 16)
-        if not (cur_mode == ARM_CPU_MODE_SVC and prev_mode == ARM_CPU_MODE_IRQ):
-            continue
-        lines = data.split('\n')[1:]    # skip the 1st line
-        rawtrace[idx] = []
-        for l in lines:
-            # TODO: ignore Data Abt? or truncate trace here?
-            if l.startswith("Stopped"):
+            if not check_status(fd.readline(), ostag):
                 continue
-            addr = int(l.split(':')[1].split(']')[0], 16)
-            # skip exception vector stub
-            if addr&0xffff0000 == 0xffff0000:
-                continue
-            rawtrace[idx].append(addr)
+        rawtrace[idx] = [x for x in parse_trace(tr, False, False)]
 
 diverge_appearance = {}
 target_appearance = {}
@@ -134,12 +119,16 @@ for tr_x,tr_y in itertools.combinations(tracelog, 2):
             True)
 
     # per trace frequency count
-    for d in diverge:
+    for dp in diverge:
+        assert (dp[0] == dp[1])
+        d = dp[0]
         if d not in per_diverge_appearance:
             per_diverge_appearance[d] = 0
         per_diverge_appearance[d] += 1
 
-    for d, ei in zip(diverge, eistack):
+    for dp, ei in zip(diverge, eistack):
+        assert (dp[0] == dp[1])
+        d = dp[0]
         if d not in diverge_appearance:
             diverge_appearance[d] = [0, 0, 9999999999, len(diverge_trace[str(d)]), 0, 9999999999]
         diverge_appearance[d][0] += 1   # total appearance
