@@ -156,19 +156,21 @@ def diff_rawmem():
     bv = anal.rawmem_bn_init(regfile, memfile)
 
     traces = preproc_traces()
-    # Truncate traces at user space address
-    vmap = {}
-    for va, pa, sz, prot in anal.mm.walk():
-        assert (va not in vmap)
-        vmap[va] = prot
-    for tr in traces:
-        newtr = []
-        for va in tr['full_trace']:
-            vpg = va&(~anal.mm.page_mask(va))
-            # make sure non-writeable from lower PL (RiscOS fixes)
-            if not vmap[vpg].check_write_pl0():
-                newtr.append(va)
-        tr['full_trace'] = [x for x in newtr]
+    ## Truncate traces at user space address
+    #vmap = {}
+    #for va, pa, sz, prot in anal.mm.walk():
+    #    assert (va not in vmap)
+    #    vmap[va] = prot
+    #for tr in traces:
+    #    newtr = []
+    #    for va in tr['full_trace']:
+    #        vpg = va&(~anal.mm.page_mask(va))
+    #        # make sure non-writeable from lower PL (RiscOS fixes)
+    #        if not vmap[vpg].check_write_pl0():
+    #            newtr.append(va)
+    #        else:
+    #            break
+    #    tr['full_trace'] = [x for x in newtr]
 
     anal.bn_analyze(bv, traces, outdir)
 
