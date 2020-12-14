@@ -185,6 +185,9 @@ class DiffSliceAnalyzer(object):
         bv.platform = Architecture['armv7'].standalone_platform
         self.mm = vm.VM(reg, mem)
 
+        #binaryninja.log.log_to_file(0, "log")
+        #binaryninja.log.redirect_output_to_log()
+
         ev = [0xffff0000+i*4 for i in range(8)]
         for va in ev:
             pa = self.mm.translate(va)

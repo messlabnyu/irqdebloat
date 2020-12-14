@@ -110,9 +110,9 @@ def get_return_blocks(return_block_map, bv, raw_trace=None, tracefile=None, infe
         #            fun = bv.get_functions_containing(instaddr)
         #            break
         # this might be a switch table
-        if inst_lookahead and not fun:
-            fix_switch_table(bv, bv.get_functions_containing(inst_lookahead)[0])
-            fun = bv.get_functions_containing(instaddr)
+        #if inst_lookahead and not fun:
+        #    fix_switch_table(bv, bv.get_functions_containing(inst_lookahead)[0])
+        #    fun = bv.get_functions_containing(instaddr)
         # lazy create function
         if not fun:
             print("Add new function at Addr: {}".format(hex(instaddr)))
