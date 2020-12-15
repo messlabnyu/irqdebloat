@@ -79,6 +79,7 @@ for curdir,_,traces in os.walk(tracedir):
 from analysis import *
 
 anal = DiffSliceAnalyzer()
+bv = anal.rawmem_bn_init(regfile, memfile)
 
 tracelog = {}
 for curdir,_,traces in os.walk(tracedir):
@@ -102,7 +103,7 @@ for curdir,_,traces in os.walk(tracedir):
         with open(tr, 'r') as fd:
             if not check_status(fd.readline(), ostag):
                 continue
-        rawtrace[idx] = [x for x in parse_trace(tr, False, False)]
+        rawtrace[idx] = [anal.mm.translate(x) for x in parse_trace(tr, False, False)]
 
 diverge_appearance = {}
 target_appearance = {}
