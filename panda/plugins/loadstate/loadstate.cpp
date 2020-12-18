@@ -112,6 +112,8 @@ void load_states(CPUState *env, const char *memfile, const char *cpufile) {
         envp->banked_r14[i] = cpuregs["banked_r14"][i].as<uint32_t>();
     }
     printf("}\n");
+    envp->cp15.tpidrprw_s = cpuregs["tpidrprw"].as<uint32_t>();
+    printf("tpidrprw = %#x\n", cpuregs["tpidrprw"].as<uint32_t>());
 
     // Extremely gross but let's force the secure and non-secure AS
     // to have the same memory dispatcher
