@@ -242,7 +242,9 @@ static int before_block_exec(CPUState *env, TranslationBlock *tb) {
             trace_count++;
             num_blocks = 0;
 
-            if (cpu_mode != ARM_CPU_MODE_ABT)
+            if (cpu_mode == ARM_CPU_MODE_IRQ)
+                start_new_irq = HWIRQ_FUZZ_TRY;
+            if (cpu_mode == ARM_CPU_MODE_SVC && prev_cpu_mode == ARM_CPU_MODE_IRQ)
                 start_new_irq = HWIRQ_FUZZ_TRY;
         }
         break;
