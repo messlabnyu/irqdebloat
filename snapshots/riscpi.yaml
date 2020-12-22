@@ -69,3 +69,4 @@ banked_r14:
     - 0xfc21e604
     - 0x00000000
     - 0x0000006c
+tpidrprw: 0x2ae38546
