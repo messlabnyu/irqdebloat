@@ -3109,6 +3109,14 @@ static int disas_vfp_insn(DisasContext *s, uint32_t insn)
         return 1;
     }
 
+    // Short-circuit `VMRS Rt, FPEXC` and disable VFP
+    if ((insn&0xffff0f10) == 0xeef80a10) {
+        rd = (insn>>12)&0xf;
+        tmp = tcg_const_i32(0);
+        store_reg(s, rd, tmp);
+        return 0;
+    }
+
     /* FIXME: this access check should not take precedence over UNDEF
      * for invalid encodings; we will generate incorrect syndrome information
      * for attempts to execute invalid vfp/neon encodings with FP disabled.
