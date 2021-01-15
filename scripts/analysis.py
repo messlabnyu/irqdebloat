@@ -32,12 +32,12 @@ def check_status(line, mode='linux'):
     l = line.split()
     prev_mode = int(l[-1], 16)
     cur_mode = int(l[2][:-1], 16)
-    if mode == 'linux':
+    if mode in ['linux', 'freebsd']:
         return (cur_mode == ARM_CPU_MODE_SVC and prev_mode == ARM_CPU_MODE_IRQ)
     else:   # RiscOS
         return cur_mode == ARM_CPU_MODE_IRQ
 
-def parse_trace(tracefile, dedup=True, tracelimit=True):
+def parse_trace(tracefile, tag, dedup=True, tracelimit=True):
     with open(tracefile, 'r') as fd:
         data = fd.read().strip()
     lines = data.split('\n')[1:]    # skip the 1st line
@@ -48,6 +48,11 @@ def parse_trace(tracefile, dedup=True, tracelimit=True):
             break
 
         addr = int(l.split(':')[1].split(']')[0], 16)
+        # FreeBSD irq hack: truncate at the end of first intc dispatch loop
+        if tag == "freebsd" and addr == 0xc069bd84:
+            break
+        if tag == "linux" and addr == 0x8051da68:
+            break
         # skip exception vector stub
         if addr&0xffff0000 == 0xffff0000:
             continue
@@ -57,10 +62,14 @@ def parse_trace(tracefile, dedup=True, tracelimit=True):
 
         trace.append(addr)
 
-        if tracelimit and len(trace) > 10000:
+        if tracelimit and len(trace) > 20000:
             break
     return trace
 
+
+if len(sys.argv) < 6:
+    print("Usage: ./analysis.py tracedir regfile memfile outdir ostag")
+    sys.exit()
 
 tracedir = "../log/trace"
 tracedir = "../log/raspi_trace"
@@ -68,6 +77,8 @@ tracedir = "../log/subtrace"
 tracedir = "../log/irq8_trace"
 tracedir = "../log/linux_enum_l1"
 tracedir = "../log/riscpi_enum_l1"
+tracedir = "../log/freebsd_enum_l1"
+tracedir = sys.argv[1]
 
 #kernelfile = "../log/home/moyix/bbb/build/tmp/work/beaglebone-poky-linux-gnueabi/linux-stable/5.7.14-r0/build/vmlinux"
 #kernelfile = "../instrument/vmlinux"
@@ -76,6 +87,10 @@ regfile = "snapshots/raspi2.reg"
 memfile = "snapshots/raspi2.mem"
 regfile = "snapshots/riscpi.reg"
 memfile = "snapshots/riscpi.mem"
+regfile = "snapshots/freebsd.reg"
+memfile = "snapshots/freebsd.mem"
+regfile = sys.argv[2]
+memfile = sys.argv[3]
 
 outdir = "../log/diffout"
 outdir = "../log/raspi_diff"
@@ -83,9 +98,15 @@ outdir = "../log/subdiff"
 outdir = "../log/irq8_diff"
 outdir = "../log/linux_enum_l1_diff"
 outdir = "../log/riscpi_enum_l1_diff"
+outdir = "../log/freebsd_enum_l1_diff"
+outdir = sys.argv[4]
+#outdir = "../log/testdiff"
+#tracedir = "../log/testsub"
 
 ostag = "linux"
 ostag = "riscos"
+ostag = "freebsd"
+ostag = sys.argv[5]
 
 
 def preproc_traces():
@@ -126,7 +147,7 @@ def preproc_traces():
 
     traces = []
     for tf in tracefiles:
-        traces.append({'dir': tf, 'full_trace': parse_trace(tf)})
+        traces.append({'dir': tf, 'full_trace': parse_trace(tf, ostag)})
     return traces
 
 def debugdiff():
