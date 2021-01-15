@@ -47,6 +47,7 @@ uint32_t label_number = 1;
 #define HWIRQ_FUZZ_TRY  4
 static int start_new_irq = HWIRQ_FUZZ_TRY;
 
+bool auto_enum = false;
 bool nosvc = false;
 bool feed_null = false;
 bool interrupt = false;
@@ -187,18 +188,38 @@ static void ioread(CPUState *env, target_ulong pc, hwaddr addr, uint32_t size, u
 }
 
 void track_dead_ioread() {
+    if (!auto_enum) return;
+
     switch (start_new_irq) {
     case 3:
-        if (enum_l2 && l1cycle_updated)
-            l2index = (l2index+1)%l2_nums.size();
+        if (enum_l2 && l1cycle_updated) {
+            l2index++;
+            if (l2index == l2_nums.size()) {
+                l2index = 0;
+                l2cycle++;
+                l2cycle_updated = true;
+            }
+        }
         break;
     case 2:
-        if (enum_l3 && l2cycle_updated)
-            l3index = (l3index+1)%l3_nums.size();
+        if (enum_l3 && l2cycle_updated) {
+            l3index++;
+            if (l3index == l3_nums.size()) {
+                l3index = 0;
+                l3cycle++;
+                l3cycle_updated = true;
+            }
+        }
         break;
     case 1:
-        if (enum_l4 && l3cycle_updated)
-            l4index = (l4index+1)%l4_nums.size();
+        if (enum_l4 && l3cycle_updated) {
+            l4index++;
+            if (l4index == l4_nums.size()) {
+                l4index = 0;
+                l4cycle++;
+                l4cycle_updated = true;
+            }
+        }
         break;
     default:
         break;
@@ -219,8 +240,6 @@ static bool before_block_exec_invalidate_opt(CPUState *cpu, TranslationBlock *tb
         printf("Truncate Trace (max block number exceeded)\n");
         qemu_loglevel = 0;
         num_blocks = 0;
-        track_dead_ioread();
-        start_new_irq = HWIRQ_FUZZ_TRY;
         return true;
     }
     return false;
@@ -372,6 +391,7 @@ bool init_plugin(void *self) {
     interrupt = panda_parse_bool(args, "interrupt");
     fiq = panda_parse_bool(args, "fiq");
     feed_null = panda_parse_bool(args, "null");
+    auto_enum = panda_parse_bool(args, "auto");
     ioreplay_debug = panda_parse_bool(args, "debug");
     limit_trace = panda_parse_bool(args, "tracelimit");
     tracedir = panda_parse_string(args, "tracedir", "../log/trace");
