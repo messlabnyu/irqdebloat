@@ -2,12 +2,32 @@
 
 import os
 import re
+import sys
 import json
 import itertools
 
 DIFFOUT_DIR = "/data/tonyhu/irq/log/raspi_diff"
 DIFFOUT_DIR = "/data/tonyhu/irq/log/linux_enum_l1_diff"
 DIFFOUT_DIR = "/data/tonyhu/irq/log/riscpi_enum_l1_diff"
+DIFFOUT_DIR = "/data/tonyhu/irq/log/freebsd_enum_l1_diff"
+DIFFOUT_DIR = sys.argv[4]
+#DIFFOUT_DIR = "/data/tonyhu/irq/log/testdiff"
+
+
+from analysis import *
+
+anal = DiffSliceAnalyzer()
+bv = anal.rawmem_bn_init(regfile, memfile)
+mmap = anal.mm.walk()
+
+def getva(pa):
+    va = None
+    for v, p, sz, _ in mmap:
+        if pa&(~(sz-1)) == p:
+            assert (not va)
+            va = v+(pa&(sz-1))
+    return va
+
 
 diverge_targets = {}
 diverge_trace = {}
@@ -57,12 +77,14 @@ for x in difflog:
 for tp, cnt in tracestat.items():
     print tp, " : ", cnt
 for d, t in diverge_targets.items():
-    print hex(int(d)), " : ", [hex(e) for e in t]#, " - ", [t for t in diverge_trace[d]]
+    print hex(int(d)), hex(getva(int(d))), " : ", [hex(e)+"("+hex(getva(e))+")" for e in t]#, " - ", [t for t in diverge_trace[d]]
 
 
 tracedir = "/data/tonyhu/irq/log/raspi_trace"
 tracedir = "/data/tonyhu/irq/log/linux_enum_l1"
 tracedir = "/data/tonyhu/irq/log/riscpi_enum_l1"
+tracedir = "/data/tonyhu/irq/log/freebsd_enum_l1"
+tracedir = sys.argv[1]
 
 iovals = {}
 for curdir,_,traces in os.walk(tracedir):
@@ -76,10 +98,6 @@ for curdir,_,traces in os.walk(tracedir):
             ioval = iolog.split("val=")[1]
             iovals[trid] = int(ioval, 16)
 
-from analysis import *
-
-anal = DiffSliceAnalyzer()
-bv = anal.rawmem_bn_init(regfile, memfile)
 
 tracelog = {}
 for curdir,_,traces in os.walk(tracedir):
