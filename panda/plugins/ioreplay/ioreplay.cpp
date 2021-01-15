@@ -38,15 +38,17 @@ void uninit_plugin(void *);
 
 std::set<uint64_t> ioaddrs_seen;
 std::deque<uint64_t> iovals;
-std::deque<uint64_t> l1_nums, l2_nums, l3_nums;
-bool enum_l1 = false, enum_l2 = false, enum_l3 = false;
-uint64_t l1index = 0, l2index = 0, l3index = 0;
-uint64_t l1cycle = 0, l2cycle = 0, l3cycle = 0;
-bool l1cycle_updated = false, l2cycle_updated = false, l3cycle_updated = false;
+std::deque<uint64_t> l1_nums, l2_nums, l3_nums, l4_nums;
+bool enum_l1 = false, enum_l2 = false, enum_l3 = false, enum_l4=false;
+uint64_t l1index = 0, l2index = 0, l3index = 0, l4index = 0;
+uint64_t l1cycle = 0, l2cycle = 0, l3cycle = 0, l4cycle = 0;
+bool l1cycle_updated = false, l2cycle_updated = false, l3cycle_updated = false, l4cycle_updated = false;
 uint32_t label_number = 1;
-#define HWIRQ_FUZZ_TRY  3
+#define HWIRQ_FUZZ_TRY  4
 static int start_new_irq = HWIRQ_FUZZ_TRY;
 
+bool nosvc = false;
+bool feed_null = false;
 bool interrupt = false;
 bool fiq = false;
 bool ioreplay_debug = false;
@@ -70,6 +72,7 @@ static uint64_t start_time = 0;
 #define MAX_TRACE_TIMER_MS  (1*60*1000)
 
 static uint32_t prev_cpu_mode = 0;
+static uint64_t trace_start = 0;
 static uint64_t trace_count = 0;
 static std::vector<gchar*> ioseq;
 
@@ -78,8 +81,11 @@ static void ioread(CPUState *env, target_ulong pc, hwaddr addr, uint32_t size, u
     CPUArchState *cpu = (CPUArchState *)env->env_ptr;
     if (fd == -1) fd = open("/dev/urandom", O_RDONLY);
     // Feed random value until IRQ fire for the first time
-    if (!trace_count) {
-        assert(read(fd, val, sizeof(*val)) > 0);
+    if (trace_count == trace_start) {
+        if (feed_null)
+            *val = 0;
+        else
+            assert(read(fd, val, sizeof(*val)) > 0);
         return;
     }
     //ioaddrs_seen.insert(addr);
@@ -88,7 +94,10 @@ static void ioread(CPUState *env, target_ulong pc, hwaddr addr, uint32_t size, u
         iovals.pop_front();
     }
     else {
-        assert(read(fd, val, sizeof(*val)) > 0);
+        if (feed_null)
+            *val = 0;
+        else
+            assert(read(fd, val, sizeof(*val)) > 0);
     }
     if (start_new_irq) {
         //*val = (1 << ((*val)&0x3f)) | (1 << (((*val)>>8)&0x1f));
@@ -140,6 +149,25 @@ static void ioread(CPUState *env, target_ulong pc, hwaddr addr, uint32_t size, u
             } else {
                 if (!l3_nums.empty())
                     *val = l3_nums[(*val)%l3_nums.size()];
+            }
+            break;
+        case HWIRQ_FUZZ_TRY-3:
+            if (enum_l4) {
+                *val = l4_nums[l4index];
+                if (l3cycle_updated)
+                    l4index++;
+                l4cycle_updated = false;
+                if (l4index == l4_nums.size()) {
+                    l4cycle++;
+                    l4cycle_updated = true;
+                    l4index = 0;
+                    l3index = 0;
+                    l2index = 0;
+                    l1index = 0;
+                }
+            } else {
+                if (!l4_nums.empty())
+                    *val = l4_nums[(*val)%l4_nums.size()];
             }
             break;
         }
@@ -196,7 +224,7 @@ static int before_block_exec(CPUState *env, TranslationBlock *tb) {
             qemu_log_flush();
 
             // log io vals
-            if (!ioseq.empty() && trace_count) {    // ignores any io before actually started logging traces
+            if (!ioseq.empty() && trace_count != trace_start) {    // ignores any io before actually started logging traces
                 char *iolog = g_strdup_printf("%s/iovals_%ld.log", tracedir, trace_count-1);
                 std::ofstream os(iolog, std::ofstream::out);
                 for (gchar *v : ioseq) {
@@ -210,12 +238,17 @@ static int before_block_exec(CPUState *env, TranslationBlock *tb) {
 
 
             // check exit
-            if (!enum_l1 && !enum_l2 && !enum_l3) {
+            if (!enum_l1 && !enum_l2 && !enum_l3 && !enum_l4) {
                 if (qemu_clock_get_ms(QEMU_CLOCK_REALTIME) - start_time > MAX_TRACE_TIMER_MS) {
                     printf("Done with ioreplay (max time %d ms)\n", MAX_TRACE_TIMER_MS);
                     exit(0);
                 }
-            } else if (enum_l3) {   // l3 cycle detection in the highest priority
+            } else if (enum_l4) {   // l4 cycle detection in the highest priority
+                if (l4cycle) {
+                    printf("Done l4 irq replay\n");
+                    exit(0);
+                }
+            } else if (enum_l3) {
                 if (l3cycle) {
                     printf("Done l3 irq replay\n");
                     exit(0);
@@ -244,7 +277,7 @@ static int before_block_exec(CPUState *env, TranslationBlock *tb) {
 
             if (cpu_mode == ARM_CPU_MODE_IRQ)
                 start_new_irq = HWIRQ_FUZZ_TRY;
-            if (cpu_mode == ARM_CPU_MODE_SVC && prev_cpu_mode == ARM_CPU_MODE_IRQ)
+            if (!nosvc && cpu_mode == ARM_CPU_MODE_SVC && prev_cpu_mode == ARM_CPU_MODE_IRQ)
                 start_new_irq = HWIRQ_FUZZ_TRY;
         }
         break;
@@ -265,10 +298,26 @@ void after_machine_init(CPUState *env) {
             (fiq ? CPU_INTERRUPT_FIQ : 0));
 }
 
-static void prepare_enum(std::deque<uint64_t> &preirq) {
+static void prepare_enum_2bit(std::deque<uint64_t> &preirq) {
     for (int i = 0; i < 32; i++)
         for (int j = i; j < 32; j++)
             preirq.push_back((1 << i)|(1 << j));
+}
+
+static void prepare_enum_1bit(std::deque<uint64_t> &preirq) {
+    for (int i = 0; i < 32; i++)
+        preirq.push_back(1 << i);
+}
+
+static void prepare_hwirq_l1(std::deque<uint64_t> &preirq, panda_arg_list *args, const char *id, bool do_enum) {
+    std::istringstream ss(panda_parse_string(args, id, ""));
+    std::string s;
+    while (std::getline(ss, s, '|')) {
+        preirq.push_back(strtoul(s.c_str(), NULL, 16));
+    }
+    if (do_enum && preirq.empty()) {
+        prepare_enum_2bit(preirq);
+    }
 }
 
 static void prepare_hwirq(std::deque<uint64_t> &preirq, panda_arg_list *args, const char *id, bool do_enum) {
@@ -278,7 +327,7 @@ static void prepare_hwirq(std::deque<uint64_t> &preirq, panda_arg_list *args, co
         preirq.push_back(strtoul(s.c_str(), NULL, 16));
     }
     if (do_enum && preirq.empty()) {
-        prepare_enum(preirq);
+        prepare_enum_1bit(preirq);
     }
 }
 
@@ -297,15 +346,22 @@ bool init_plugin(void *self) {
     cpufile = panda_parse_string(args, "cpu", "cpu");
     interrupt = panda_parse_bool(args, "interrupt");
     fiq = panda_parse_bool(args, "fiq");
+    feed_null = panda_parse_bool(args, "null");
     ioreplay_debug = panda_parse_bool(args, "debug");
     limit_trace = panda_parse_bool(args, "tracelimit");
     tracedir = panda_parse_string(args, "tracedir", "../log/trace");
+    const char *_trace_start_str = panda_parse_string(args, "start", "0");
+    trace_start = strtoul(_trace_start_str, NULL, 10);
+    trace_count = trace_start;
+    nosvc = panda_parse_bool(args, "nosvc");
     enum_l1 = panda_parse_bool(args, "enuml1");
     enum_l2 = panda_parse_bool(args, "enuml2");
     enum_l3 = panda_parse_bool(args, "enuml3");
-    prepare_hwirq(l1_nums, args, "l1", enum_l1);
+    enum_l4 = panda_parse_bool(args, "enuml4");
+    prepare_hwirq_l1(l1_nums, args, "l1", enum_l1);
     prepare_hwirq(l2_nums, args, "l2", enum_l2);
     prepare_hwirq(l3_nums, args, "l3", enum_l3);
+    prepare_hwirq(l4_nums, args, "l4", enum_l4);
 
     panda_cb pcb = { .unassigned_io_read = ioread };
     panda_register_callback(self, PANDA_CB_UNASSIGNED_IO_READ, pcb);
