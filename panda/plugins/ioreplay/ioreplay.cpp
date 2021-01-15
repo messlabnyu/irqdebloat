@@ -186,6 +186,25 @@ static void ioread(CPUState *env, target_ulong pc, hwaddr addr, uint32_t size, u
 #endif
 }
 
+void track_dead_ioread() {
+    switch (start_new_irq) {
+    case 3:
+        if (enum_l2 && l1cycle_updated)
+            l2index = (l2index+1)%l2_nums.size();
+        break;
+    case 2:
+        if (enum_l3 && l2cycle_updated)
+            l3index = (l3index+1)%l3_nums.size();
+        break;
+    case 1:
+        if (enum_l4 && l3cycle_updated)
+            l4index = (l4index+1)%l4_nums.size();
+        break;
+    default:
+        break;
+    }
+}
+
 static void top_loop(CPUState *cpu) {
     load_states(cpu, memfile, cpufile);
 }
@@ -200,6 +219,8 @@ static bool before_block_exec_invalidate_opt(CPUState *cpu, TranslationBlock *tb
         printf("Truncate Trace (max block number exceeded)\n");
         qemu_loglevel = 0;
         num_blocks = 0;
+        track_dead_ioread();
+        start_new_irq = HWIRQ_FUZZ_TRY;
         return true;
     }
     return false;
@@ -275,10 +296,14 @@ static int before_block_exec(CPUState *env, TranslationBlock *tb) {
             trace_count++;
             num_blocks = 0;
 
-            if (cpu_mode == ARM_CPU_MODE_IRQ)
+            if (cpu_mode == ARM_CPU_MODE_IRQ) {
+                track_dead_ioread();
                 start_new_irq = HWIRQ_FUZZ_TRY;
-            if (!nosvc && cpu_mode == ARM_CPU_MODE_SVC && prev_cpu_mode == ARM_CPU_MODE_IRQ)
+            }
+            if (!nosvc && cpu_mode == ARM_CPU_MODE_SVC && prev_cpu_mode == ARM_CPU_MODE_IRQ) {
+                track_dead_ioread();
                 start_new_irq = HWIRQ_FUZZ_TRY;
+            }
         }
         break;
     default:
