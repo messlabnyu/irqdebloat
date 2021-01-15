@@ -395,7 +395,7 @@ def reprocess_trace(bv, raw_trace, return_blocks, postdom_out):
 
         # initialize
         if not prev_func:
-            prev_func.append([func, ret_block, None])
+            prev_func.append([func, ret_block, None, 0])
 
         if DEBUG:
             print "fake_trace : ", fake_trace_cb
@@ -432,12 +432,15 @@ def reprocess_trace(bv, raw_trace, return_blocks, postdom_out):
         # check if we're at return block
         # NOTE(hzh): fix to compare BasicBlock with start address, looks like a problem in BN, Version 1.1.1339
         #if ret_block not in return_blocks[func]:
+        seen_callframe = False
         if ret_block.start in [bb.start for bb in return_blocks[func]]:
             # mark the entry to return block in reverse until we reach function start
             for index in reversed(range(len(scanning_trace))):
+                if not seen_callframe and index == prev_func[-1][3] and prev_func[-1][3] != 0:
+                    seen_callframe = True
                 if scanning_trace[index] and scanning_trace[index][1] == func and scanning_trace[index][2] == None:
                     scanning_trace[index][2] = ret_block
-                if scanning_trace[index] and scanning_trace[index][0] == func.start:
+                if scanning_trace[index] and scanning_trace[index][0] == func.start and seen_callframe:
                     break
             scanning_trace.append([instaddr, func, ret_block, ret_block.start, raw_trace['va'][trace_index]])
             # pop fake trace cb if seen a real return block
@@ -450,9 +453,11 @@ def reprocess_trace(bv, raw_trace, return_blocks, postdom_out):
             rb = func.get_basic_block_at(ret_block.end)
             # mark the entry to return block in reverse until we reach function start
             for index in reversed(range(len(scanning_trace))):
+                if not seen_callframe and index == prev_func[-1][3] and prev_func[-1][3] != 0:
+                    seen_callframe = True
                 if scanning_trace[index] and scanning_trace[index][1] == func and scanning_trace[index][2] == None:
                     scanning_trace[index][2] = rb
-                if scanning_trace[index] and scanning_trace[index][0] == func.start:
+                if scanning_trace[index] and scanning_trace[index][0] == func.start and seen_callframe:
                     break
             scanning_trace.append([instaddr, func, rb, ret_block.start, raw_trace['va'][trace_index]])
             # if we seen it in the middle of a basicblock, we might already registered it before, remove the old registary
@@ -484,7 +489,7 @@ def reprocess_trace(bv, raw_trace, return_blocks, postdom_out):
             if scanning_trace[-1] != None:
                 scanning_trace.append(None)
             # push callstack
-            prev_func.append([func, ret_block, ci])
+            prev_func.append([func, ret_block, ci, len(scanning_trace)-1])
         # NOTE: QEMU trace have a different granularity of basicblock than binja,
         #       especially in QEMU basicblock truncates where the last instruction is a `call` but not in binja
         #       there might also be multiple QEMU bbs in one binja bb
@@ -496,7 +501,7 @@ def reprocess_trace(bv, raw_trace, return_blocks, postdom_out):
                 if scanning_trace[-1] != None:
                     scanning_trace.append(None)
                 # push callstack
-                prev_func.append([func, ret_block, ci])
+                prev_func.append([func, ret_block, ci, len(scanning_trace)-1])
 
 
         if (instr_counter % 10000) == 0:
@@ -542,8 +547,12 @@ def reprocess_trace(bv, raw_trace, return_blocks, postdom_out):
             else:
                 if check_return(bv, inst[1], inst[0]):
                     prev_bb = scanning_trace[tridx][2] = inst[1].get_basic_block_at(inst[0])
-                elif tridx in intended_return_block:
-                    prev_bb = scanning_trace[tridx][2] = intended_return_block[tridx][0]    # suppose any return block should do
+                #elif tridx in intended_return_block:
+                #    prev_bb = scanning_trace[tridx][2] = intended_return_block[tridx][0]    # suppose any return block should do
+                else:
+                    # It happens when we truncate the trace in the middle
+                    # Makes itself harmless: assign itself to be return node
+                    prev_bb = scanning_trace[tridx][2] = inst[1].get_basic_block_at(inst[0])
             print "Fixing {INST}, {FUNC}, {BB}".format(INST=hex(inst[0]), FUNC=inst[1].name, BB=hex(inst[2].start) if inst[2] else "None")
         if inst:
             prev_func = inst[1]
