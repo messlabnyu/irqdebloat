@@ -8,7 +8,7 @@ from instrument import vm
 from extract_postdominators import *
 
 PERF = False
-DEBUG = False
+DEBUG = True
 
 # idea comes from [diffslicing paper](http://bitblaze.cs.berkeley.edu/papers/diffslicing_oakland11.pdf)
 class DiffSliceAnalyzer(object):
@@ -295,6 +295,11 @@ class DiffSliceAnalyzer(object):
         for tr_x,tr_y in itertools.combinations(final_traces, 2):
             diverge_points = set()
             branch_targets = set()
+
+            # Make sure the two traces to diff have a common starting point
+            # No point to diff otherwise
+            if final_traces[tr_x][0] != final_traces[tr_y][0]:
+                continue
 
             idx = int(tr_x.split('_')[-1].split('.')[0])
             idy = int(tr_y.split('_')[-1].split('.')[0])
