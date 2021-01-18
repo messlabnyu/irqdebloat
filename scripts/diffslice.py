@@ -8,7 +8,7 @@ from instrument import vm
 from extract_postdominators import *
 
 PERF = False
-DEBUG = True
+DEBUG = False
 
 # idea comes from [diffslicing paper](http://bitblaze.cs.berkeley.edu/papers/diffslicing_oakland11.pdf)
 class DiffSliceAnalyzer(object):
@@ -112,8 +112,7 @@ class DiffSliceAnalyzer(object):
             else:
                 assert(iaddr(traces[0], prev_tr0) == iaddr(traces[1], prev_tr1))
                 diverge.append((iaddr(traces[0], prev_tr0), vaddr(traces[0], prev_tr0)))
-                branch_targets.add((iaddr(traces[1], prev_tr1), iaddr(traces[0], tr0), iaddr(traces[1], prev_tr1 + 1), \
-                        vaddr(traces[0], tr0), vaddr(traces[1], prev_tr1 + 1)))
+                branch_targets.add((iaddr(traces[1], prev_tr1), vaddr(traces[1], prev_tr1 + 1), vaddr(traces[0], prev_tr0 + 1)))
                 prev_tr0 = tr0
                 prev_tr1 = tr1
                 continue
@@ -123,15 +122,13 @@ class DiffSliceAnalyzer(object):
             else:
                 assert(iaddr(traces[0], prev_tr0) == iaddr(traces[1], prev_tr1))
                 diverge.append((iaddr(traces[0], prev_tr0), vaddr(traces[0], prev_tr0)))
-                branch_targets.add((iaddr(traces[1], prev_tr1), iaddr(traces[0], tr0), iaddr(traces[1], prev_tr1 + 1), \
-                        vaddr(traces[0], tr0), vaddr(traces[1], prev_tr1 + 1)))
+                branch_targets.add((iaddr(traces[1], prev_tr1), vaddr(traces[1], prev_tr1 + 1), vaddr(traces[0], prev_tr0 + 1)))
                 prev_tr0 = tr0
                 prev_tr1 = tr1
         assert(iaddr(traces[0], prev_tr0) == iaddr(traces[1], prev_tr1))
         if not endoftrace([prev_tr0 + 1, prev_tr1 + 1], traces):
             diverge.append((iaddr(traces[0], prev_tr0), vaddr(traces[0], prev_tr0)))
-            branch_targets.add((iaddr(traces[1], prev_tr1), iaddr(traces[0], prev_tr0 + 1), iaddr(traces[1], prev_tr1 + 1), \
-                    vaddr(traces[0], tr0), vaddr(traces[1], prev_tr1 + 1)))
+            branch_targets.add((iaddr(traces[1], prev_tr1), vaddr(traces[1], prev_tr1 + 1), vaddr(traces[0], prev_tr0 + 1)))
 
         # output the aligned pair of traces
         if outdir:
@@ -270,8 +267,10 @@ class DiffSliceAnalyzer(object):
                     final_traces[log].append([tr[0], immediate_postdoms[tr[1]][tr[2]][tr[3]], tr[4]])
                 else:
                     # for incomplete traces, the last few blocks might ended up wrong post-doms
-                    print "failed: ", hex(tr[0])
-                    final_traces[log].append([tr[0], -1, tr[4]])
+                    print "failed: ", hex(tr[0]), hex(tr[4]), hex(tr[2]), hex(tr[3]), hex(tr[1].start)
+                    #for x in immediate_postdoms[tr[1]]:
+                    #    print hex(x), ":", [hex(xx) for xx in immediate_postdoms[tr[1]][x]]
+                    final_traces[log].append([tr[0], tr[2], tr[4]])
             # log new traces
             if log not in pre_trace['traces']:
                 pre_trace['traces'].append(log)

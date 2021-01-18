@@ -81,7 +81,7 @@ def fix_switch_table(bv, mal_func):
     Return a list of returning blocks, and a map of functions and a list of traces within the function
 '''
 # TODO(hzh): might have trouble in recursive call - need to verify that later
-def get_return_blocks(return_block_map, bv, raw_trace=None, tracefile=None, infer_return_block=False, vm=None, perf=False):
+def get_return_blocks(return_block_map, bv, raw_trace=None, tracefile=None, merge_jump=False, infer_return_block=True, vm=None, perf=False):
     if not raw_trace:
         with open(tracefile, 'rb') as fd:
             trace = json.load(fd)
@@ -204,8 +204,12 @@ def get_return_blocks(return_block_map, bv, raw_trace=None, tracefile=None, infe
         for tr in traces[1:]:
             # check if we have returned fome some inst
             instaddr = merged_trace[-1]
-            tokens, length = fun.arch.get_instruction_text(bv.read(instaddr, 16), instaddr)
-            if tr[0] == (instaddr + length):
+            #tokens, length = fun.arch.get_instruction_text(bv.read(instaddr, 16), instaddr)
+            #if tr[0] == (instaddr + length):
+            #    merged_trace += tr
+            bb1 = fun.get_basic_block_at(instaddr)
+            bb2 = fun.get_basic_block_at(tr[0])
+            if bb1 and bb2 and bb1.start == bb2.start:
                 merged_trace += tr
             else:
                 # avoid duplicated traces
@@ -218,19 +222,20 @@ def get_return_blocks(return_block_map, bv, raw_trace=None, tracefile=None, infe
 
     # merge jump-to-another-function
     # NOTE(hzh): basic block at the start of a function don't have incoming_edges, even if there's a branch to it
-    for fun in final_traces.keys():
-        if fun not in return_block_map:
-            # walk through all the functions to see if the next instruction is the start of some func
-            target_funcs = set()
-            for tr, bb in itertools.product(final_traces[fun], return_blocks):
-                tokens, length = fun.arch.get_instruction_text(bv.read(tr[-1], 16), tr[-1])
-                if bb.function.start == (tr[-1] + length):
-                    target_funcs.add(bb.function)
-            if target_funcs:
-                return_block_map[fun] = []
-                for tf in target_funcs:
-                    return_block_map[fun] += return_block_map[tf]
-                print "Resolved function:", fun.name, return_block_map[fun]
+    if merge_jump:
+        for fun in final_traces.keys():
+            if fun not in return_block_map:
+                # walk through all the functions to see if the next instruction is the start of some func
+                target_funcs = set()
+                for tr, bb in itertools.product(final_traces[fun], return_blocks):
+                    tokens, length = fun.arch.get_instruction_text(bv.read(tr[-1], 16), tr[-1])
+                    if bb.function.start == (tr[-1] + length):
+                        target_funcs.add(bb.function)
+                if target_funcs:
+                    return_block_map[fun] = []
+                    for tf in target_funcs:
+                        return_block_map[fun] += return_block_map[tf]
+                    print "Resolved function:", fun.name, return_block_map[fun]
     # NOTE(hzh): make the last basic block in the trace the return block - in case that might called `exit` directly
     # This might also involve some of the inline functions - IDed as function but inlined in asm
     for fun in final_traces.keys():
@@ -451,6 +456,7 @@ def reprocess_trace(bv, raw_trace, return_blocks, postdom_out):
         elif ret_block.end in [bb.start for bb in return_blocks[func]]:
             # get new return block
             rb = func.get_basic_block_at(ret_block.end)
+            assert(rb)
             # mark the entry to return block in reverse until we reach function start
             for index in reversed(range(len(scanning_trace))):
                 if not seen_callframe and index == prev_func[-1][3] and prev_func[-1][3] != 0:
@@ -535,28 +541,32 @@ def reprocess_trace(bv, raw_trace, return_blocks, postdom_out):
     #   0808910A                 push    ebx
     #   ...
     #
-    prev_bb = None
-    prev_func = None
+    prev_frame = []
     for tridx in reversed(range(len(scanning_trace))):
         inst = scanning_trace[tridx]
-        if inst and inst[2]:
-            prev_bb = inst[2]
-        elif inst and prev_func:
-            if inst[1] == prev_func:
-                scanning_trace[tridx][2] = prev_bb
+        if inst and not prev_frame:
+            # Auto append last seen basicblock when stack is empty
+            prev_frame.append([inst[1], inst[2].start if inst[2] else inst[0]])
+            if not inst[2]:
+                scanning_trace[tridx][2] = prev_frame[-1][1]
             else:
-                if check_return(bv, inst[1], inst[0]):
-                    prev_bb = scanning_trace[tridx][2] = inst[1].get_basic_block_at(inst[0])
-                #elif tridx in intended_return_block:
-                #    prev_bb = scanning_trace[tridx][2] = intended_return_block[tridx][0]    # suppose any return block should do
+                scanning_trace[tridx][2] = scanning_trace[tridx][2].start
+        elif inst and prev_frame:
+            if prev_frame[-1][0] == inst[1]:    # still in the same function?
+                if not inst[2]:
+                    scanning_trace[tridx][2] = prev_frame[-1][1]
                 else:
-                    # It happens when we truncate the trace in the middle
-                    # Makes itself harmless: assign itself to be return node
-                    prev_bb = scanning_trace[tridx][2] = inst[1].get_basic_block_at(inst[0])
-            print "Fixing {INST}, {FUNC}, {BB}".format(INST=hex(inst[0]), FUNC=inst[1].name, BB=hex(inst[2].start) if inst[2] else "None")
-        if inst:
-            prev_func = inst[1]
-    return [[tr[0], tr[1], tr[2].start if tr[2] else None, tr[3], tr[4]] for tr in scanning_trace if tr]
+                    scanning_trace[tridx][2] = scanning_trace[tridx][2].start
+            else:   # see another function?
+                prev_frame.append([inst[1], inst[2].start if inst[2] else inst[0]])
+                scanning_trace[tridx][2] = prev_frame[-1][1]
+
+            # Function Call start, Pop frame stack
+            if prev_frame[-1][0].start == inst[0]:
+                prev_frame = prev_frame[:-1]
+            print "Fixing {INST}, {FUNC}, {BB}".format(INST=hex(inst[0]), FUNC=inst[1].name, BB=hex(inst[2]))
+        assert(not inst or inst[2])
+    return [[tr[0], tr[1], tr[2], tr[3], tr[4]] for tr in scanning_trace if tr]
 
 
 def find_immediate_postdominator(postdoms):
