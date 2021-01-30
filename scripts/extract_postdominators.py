@@ -96,7 +96,7 @@ def get_return_blocks(return_block_map, bv, raw_trace=None, tracefile=None, merg
     for inst in trace['full_trace']:
         instaddr = inst + image_base
         if vm:
-            instaddr = vm.translate(instaddr)
+            instaddr = vm.translate(instaddr) - vm.cpu._physical_mem_base
         if perf:
             print(" >[", hex(instaddr), "] ")
             timecheck = time.clock()
@@ -260,7 +260,7 @@ def get_return_blocks(return_block_map, bv, raw_trace=None, tracefile=None, merg
     if vm:
         return final_traces, \
                 {'va': [tr + image_base for tr in trace['full_trace']], \
-                 'pa': [vm.translate(tr+image_base) for tr in trace['full_trace']]}
+                 'pa': [vm.translate(tr+image_base)-vm.cpu._physical_mem_base for tr in trace['full_trace']]}
     else:
         return final_traces, {'va': [tr + image_base for tr in trace['full_trace']]}
 
