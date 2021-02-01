@@ -356,14 +356,29 @@ def reprocess_trace(bv, raw_trace, return_blocks, postdom_out):
     cur_function = None
     intended_return_block = {}
     while trace_index < len(raw_trace['va']):
-        if shadow_instr:
-            instaddr = shadow_instr
-            shadow_instr = None
+        next_instr = None
+        if translated:
+            instaddr = raw_trace['pa'][trace_index]
+            if trace_index + 1 < len(raw_trace['va']):
+                next_instr = raw_trace['pa'][trace_index+1]
         else:
-            if translated:
-                instaddr = raw_trace['pa'][trace_index]
+            instaddr = raw_trace['va'][trace_index]
+            if trace_index + 1 < len(raw_trace['va']):
+                next_instr = raw_trace['va'][trace_index+1]
+
+        if shadow_instr:
+            fp = bv.get_functions_containing(shadow_instr)
+            fn = bv.get_functions_containing(next_instr) if next_instr else None
+            samefunc = fp and fn and True in [f.start in [x.start for x in fn] for f in fp]
+            if next_instr != shadow_instr and samefunc:
+                instaddr = shadow_instr
             else:
-                instaddr = raw_trace['va'][trace_index]
+                shadow_instr = None
+                trace_index += 1
+                instr_counter += 1
+                continue
+        #shadow_instr = None
+
         functions = bv.get_functions_containing(instaddr)
         callstack_size = len(prev_func)
         if DEBUG:
@@ -456,6 +471,8 @@ def reprocess_trace(bv, raw_trace, return_blocks, postdom_out):
         elif ret_block.end in [bb.start for bb in return_blocks[func]]:
             # get new return block
             rb = func.get_basic_block_at(ret_block.end)
+            if not rb:
+                rb = [bb for bb in return_blocks[func] if bb.start == ret_block.end][0]
             assert(rb)
             # mark the entry to return block in reverse until we reach function start
             for index in reversed(range(len(scanning_trace))):
@@ -480,14 +497,18 @@ def reprocess_trace(bv, raw_trace, return_blocks, postdom_out):
             intended_return_block[len(scanning_trace)-1] = return_blocks[func]
 
             # yet again the TCG bb discrepancy, however, only considering the adjecent next (normal) basicblock here
-            if (not ret_block.outgoing_edges and not check_return(bv, func, instaddr)) or \
-               (len(ret_block.outgoing_edges) == 1 and ret_block.outgoing_edges[0].target.start == ret_block.end):
-                # make sure no function calls afterwards (even if there is a call inst, we should be expecting to see
-                # another TCG bb right after the call)
-                if not find_next_callinst(bv, func, instaddr):
-                    if DEBUG:
-                        print "shadow instr ", hex(instaddr), " -> ", hex(ret_block.end)
-                    shadow_instr = ret_block.end
+            #if (not ret_block.outgoing_edges and not check_return(bv, func, instaddr)) or \
+            #   (len(ret_block.outgoing_edges) == 1 and ret_block.outgoing_edges[0].target.start == ret_block.end):
+            #    # make sure no function calls afterwards (even if there is a call inst, we should be expecting to see
+            #    # another TCG bb right after the call)
+            #    if not find_next_callinst(bv, func, instaddr) and not bv.get_disassembly(instaddr).startswith("b "):
+            #        #print "potential shadow instr ", hex(instaddr), " -> ", hex(ret_block.end)
+            #        #if not shadow_instr:
+            #        if DEBUG:
+            #            print "shadow instr ", hex(instaddr), " -> ", hex(ret_block.end)
+            #        shadow_instr = ret_block.end
+            if next_instr and next_instr not in [x.target.start for x in ret_block.outgoing_edges]:
+                shadow_instr = ret_block.end
 
         # check if inst is a `call`, push a guard entry into the trace, to track recursive call
         ci = find_next_callinst(bv, func, instaddr)
@@ -513,6 +534,8 @@ def reprocess_trace(bv, raw_trace, return_blocks, postdom_out):
         if (instr_counter % 10000) == 0:
             print "Re-Processed {COUNT}/{TOTAL}".format(COUNT=instr_counter, TOTAL=len(raw_trace['va']))
 
+        if shadow_instr and shadow_instr == instaddr:
+            shadow_instr = None
         if not shadow_instr:
             trace_index += 1
             instr_counter += 1
