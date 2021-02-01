@@ -23,8 +23,8 @@ mmap = anal.mm.walk()
 def getva(pa):
     va = None
     for v, p, sz, _ in mmap:
-        if pa&(~(sz-1)) == p:
-            assert (not va)
+        if pa&(~(sz-1)) == p-anal.mm.cpu._physical_mem_base:
+            #assert (not va)
             va = v+(pa&(sz-1))
     return va
 
@@ -34,11 +34,15 @@ if ostag=="linux":
 elif ostag=="freebsd":
     # FreeBSD
     bp = [0xc0140dbc, 0xc069a948, 0xc069a960, 0xc014fbb8, 0xc065c9d4, 0xc06410c4, 0xc06496b8]
-else:
+elif ostag == "riscos":
     # RiscOS
     bp = [0xfc012ce0, 0x20049dbc, 0x20049e2c, 0x20049e9c, 0x20049f0c, 0x20049f7c, 0x20049fec, 0x2004a1ac, 0xfc207944, 0xfc2356c4, 0x200a38f4, 0xfc30742c, 0xfc2358b8, 0xfc1f58bc, 0xfc225910]
+elif ostag == "beagle":
+    bp = [0xc07aead0, 0xc07eb014, 0xc07ec9bc, 0xc0a9ac70, 0xc0b14630, 0xc0838e98, 0xc08600ac, 0xc091c078, 0xc09a2b7c, 0xc09c48d0, 0xc09c484c, 0xc0a46dbc, 0xc07e93d4, 0xc0a84284, 0xc0ad0f48, 0xc0b13834, 0xc082e3cc, 0xbf0f96dc, 0xc0afa66c]
+elif ostag == "romulus":
+    bp = [0x8058f92c, 0x8041d848, 0x804a0390, 0x8051da7c, 0x805466ec, 0x80530e68, 0x804453d0, 0x80510a70, 0x8040e5bc]
 
-pbp = [anal.mm.translate(v) for v in bp]
+pbp = [anal.mm.translate(v) - anal.mm.cpu._physical_mem_base for v in bp]
 
 ddlist = [DIFFOUT_DIR]
 if ostag == "linux" and "linux_enum_gpu_2_diff" == os.path.basename(os.path.normpath(DIFFOUT_DIR)):
@@ -87,6 +91,7 @@ dts = set()
 for x in diverge_targets:
     dts.update(diverge_targets[x])
 for p in pbp:
+    print("DEBUG", hex(p))
     if p in dts:
         print(hex(p))
 

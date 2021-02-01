@@ -32,7 +32,7 @@ def check_status(line, mode='linux'):
     l = line.split()
     prev_mode = int(l[-1], 16)
     cur_mode = int(l[2][:-1], 16)
-    if mode in ['linux', 'freebsd']:
+    if mode in ['linux', 'freebsd', 'beagle', 'romulus']:
         return (cur_mode == ARM_CPU_MODE_SVC and prev_mode == ARM_CPU_MODE_IRQ)
     else:   # RiscOS
         return cur_mode == ARM_CPU_MODE_IRQ
