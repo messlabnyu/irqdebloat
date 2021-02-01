@@ -12,9 +12,10 @@ DEBUG = False
 
 # idea comes from [diffslicing paper](http://bitblaze.cs.berkeley.edu/papers/diffslicing_oakland11.pdf)
 class DiffSliceAnalyzer(object):
-    def diff(self, outdir, trace_wanted, trace_toremove, logEI = False):
+    def diff(self, outdir, trace_wanted, trace_toremove, logEI = False, simunalign=True, favorbigei=True):
         diverge_ei = []
         trace_ids = [trace_wanted['id'], trace_toremove['id']]
+        print(trace_ids)
         traces = [trace_wanted['trace'], trace_toremove['trace']]
         vpc = [0 for tr in traces]
         ei = [[] for tr in traces]
@@ -41,6 +42,29 @@ class DiffSliceAnalyzer(object):
             pc[i] += 1
             if not endoftrace(pc, tr):
                 updateei(es[i], iaddr(tr[i], pc[i]), ipdom(tr[i], pc[i]))
+        def simulate_ei_check(sim_id, chk_id, tr, es, pc, write_back=False):
+            if write_back:
+                sim_ei = es[sim_id]
+            else:
+                sim_ei = [(x[0], x[1]) for x in es[sim_id]]
+            if DEBUG:
+                print "-------- simulate ------------"
+                print [(hex(x[0]), hex(x[1])) for x in sim_ei]
+                print [(hex(x[0]), hex(x[1])) for x in es[chk_id]]
+            sim_vpc = pc[sim_id]
+            while sim_ei != es[chk_id] and sim_vpc < len(tr[sim_id]):
+                sim_vpc += 1
+                if sim_vpc < len(tr[sim_id]):
+                    updateei(sim_ei, iaddr(tr[sim_id], sim_vpc), ipdom(tr[sim_id], sim_vpc))
+                    if DEBUG:
+                        print " > ", hex(iaddr(tr[sim_id], sim_vpc)), " : ", [(hex(x[0]), hex(x[1])) for x in sim_ei]
+                        print " > ", [(hex(x[0]), hex(x[1])) for x in es[chk_id]]
+            # check sim failed
+            if sim_ei != es[chk_id] or sim_vpc == len(tr[sim_id]):
+                return None
+            if write_back:
+                pc[sim_id] = sim_vpc
+            return (sim_vpc, len(sim_ei))
         updateei(ei[0], iaddr(traces[0], vpc[0]), ipdom(traces[0], vpc[0]))
         updateei(ei[1], iaddr(traces[1], vpc[1]), ipdom(traces[1], vpc[1]))
         while not endoftrace(vpc, traces):
@@ -74,21 +98,73 @@ class DiffSliceAnalyzer(object):
                 diverge_ei.append(ei[0][:ei_index])
             # NOTE(hzh): Sometimes 2 traces exits at different branch, ends up different immediate-postdominators. compare the EI without the last one ipdom
             if ei[0] != ei[1] and ei[0][:-1] == ei[1][:-1]:
-                while not endoftrace(vpc, traces) and iaddr(traces[0], vpc[0]) == iaddr(traces[1], vpc[1]):
-                    aligned.append([vpc[0], vpc[1]])
-                    proceed(traces, vpc, ei, 0)
-                    proceed(traces, vpc, ei, 1)
+                if simunalign:
+                    sim0 = simulate_ei_check(0, 1, traces, ei, vpc)
+                    sim1 = simulate_ei_check(1, 0, traces, ei, vpc)
+                    if DEBUG:
+                        print "debug sim0 ", sim0, " sim1 ", sim1
+                else:
+                    sim0 = None
+                    sim1 = None
+                if not sim0 and not sim1:
+                    while not endoftrace(vpc, traces) and iaddr(traces[0], vpc[0]) == iaddr(traces[1], vpc[1]):
+                        aligned.append([vpc[0], vpc[1]])
+                        proceed(traces, vpc, ei, 0)
+                        proceed(traces, vpc, ei, 1)
+                elif sim0 and not sim1:
+                    while sim0[0] != vpc[0] and not endoftrace(vpc, traces):
+                        proceed(traces, vpc, ei, 0)
+                elif sim1 and not sim0:
+                    while sim1[0] != vpc[1] and not endoftrace(vpc, traces):
+                        proceed(traces, vpc, ei, 1)
+                elif sim0 and sim1:
+                    if abs(sim0[1]-len(ei[0])) < abs(sim1[1]-len(ei[1])):
+                        while sim0[0] != vpc[0] and not endoftrace(vpc, traces):
+                            proceed(traces, vpc, ei, 0)
+                    else:
+                        while sim1[1] != vpc[1] and not endoftrace(vpc, traces):
+                            proceed(traces, vpc, ei, 1)
+            if not endoftrace(vpc, traces):
+                print hex(iaddr(traces[0], vpc[0])), hex(iaddr(traces[1], vpc[1]))
             # walk disaligned trace
             while ei[0] != ei[1] and not endoftrace(vpc, traces):
                 # NOTE(hzh): fix the corner case where traces go to complete different branches - we have different EI but the same length
                 if len(ei[0]) == len(ei[1]):
-                    proceed(traces, vpc, ei, 0)
-                    proceed(traces, vpc, ei, 1)
-                    continue
+                    if simunalign:
+                        sim0 = simulate_ei_check(0, 1, traces, ei, vpc)
+                        sim1 = simulate_ei_check(1, 0, traces, ei, vpc)
+                        if DEBUG:
+                            print "debug sim0 ", sim0, " sim1 ", sim1
+                    else:
+                        sim0 = None
+                        sim1 = None
+                    if not sim0 and not sim1:
+                        proceed(traces, vpc, ei, 0)
+                        proceed(traces, vpc, ei, 1)
+                        continue
+                    elif sim0 and not sim1:
+                        while sim0[0] != vpc[0] and not endoftrace(vpc, traces):
+                            proceed(traces, vpc, ei, 0)
+                    elif sim1 and not sim0:
+                        while sim1[0] != vpc[1] and not endoftrace(vpc, traces):
+                            proceed(traces, vpc, ei, 1)
+                    elif sim0 and sim1:
+                        if abs(sim0[1]-len(ei[0])) < abs(sim1[1]-len(ei[1])):
+                            while sim0[0] != vpc[0] and not endoftrace(vpc, traces):
+                                proceed(traces, vpc, ei, 0)
+                        else:
+                            while sim1[0] != vpc[1] and not endoftrace(vpc, traces):
+                                proceed(traces, vpc, ei, 1)
                 while len(ei[0]) != len(ei[1]) and not endoftrace(vpc, traces):
                     disalign = 0 if len(ei[0]) > len(ei[1]) else 1
-                    while len(ei[disalign]) > len(ei[1 - disalign]) and not endoftrace(vpc, traces):
-                        proceed(traces, vpc, ei, disalign)
+                    # Also check the possiblity of walking the short EI stack up till match
+                    sim = simulate_ei_check(1-disalign, disalign, traces, ei, vpc)
+                    if sim and favorbigei:
+                        while sim[0] != vpc[1-disalign] and not endoftrace(vpc, traces):
+                            proceed(traces, vpc, ei, 1-disalign)
+                    else:
+                        while len(ei[disalign]) > len(ei[1 - disalign]) and not endoftrace(vpc, traces):
+                            proceed(traces, vpc, ei, disalign)
             if DEBUG:
                 print "EI Realign"
                 print [(hex(x[0]),hex(x[1])) for x in ei[0]], [(hex(x[0]),hex(x[1])) for x in ei[1]]
@@ -187,7 +263,7 @@ class DiffSliceAnalyzer(object):
 
         ev = [0xffff0000+i*4 for i in range(8)]
         for va in ev:
-            pa = self.mm.translate(va)
+            pa = self.mm.translate(va) - self.mm.cpu._physical_mem_base
             bv.define_auto_symbol(Symbol(SymbolType.FunctionSymbol, pa, "sub_{:x}".format(pa)))
             bv.add_function(pa)
             #bv.create_user_function(pa)
@@ -295,9 +371,9 @@ class DiffSliceAnalyzer(object):
             diverge_points = set()
             branch_targets = set()
 
-            # Make sure the two traces to diff have a common starting point
+            # Make sure the two traces to diff have a common starting point (trace only)
             # No point to diff otherwise
-            if final_traces[tr_x][0] != final_traces[tr_y][0]:
+            if final_traces[tr_x][0][0] != final_traces[tr_y][0][0]:
                 continue
 
             idx = int(tr_x.split('_')[-1].split('.')[0])
