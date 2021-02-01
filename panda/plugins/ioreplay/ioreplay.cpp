@@ -89,6 +89,13 @@ static void ioread(CPUState *env, target_ulong pc, hwaddr addr, uint32_t size, u
             assert(read(fd, val, sizeof(*val)) > 0);
         return;
     }
+#ifdef TARGET_ARM
+    // Skip Romulus clocksource_mmio_readl_down
+    if (cpu->regs[15] == 0x8058f630) {
+        *val = 0;
+        return;
+    }
+#endif
     //ioaddrs_seen.insert(addr);
     if (!iovals.empty()) {
         *val = iovals.front();
