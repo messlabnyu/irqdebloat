@@ -124,8 +124,6 @@ class DiffSliceAnalyzer(object):
                     else:
                         while sim1[1] != vpc[1] and not endoftrace(vpc, traces):
                             proceed(traces, vpc, ei, 1)
-            if not endoftrace(vpc, traces):
-                print hex(iaddr(traces[0], vpc[0])), hex(iaddr(traces[1], vpc[1]))
             # walk disaligned trace
             while ei[0] != ei[1] and not endoftrace(vpc, traces):
                 # NOTE(hzh): fix the corner case where traces go to complete different branches - we have different EI but the same length

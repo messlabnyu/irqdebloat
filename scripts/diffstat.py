@@ -112,7 +112,7 @@ for d, t in diverge_targets.items():
 
 print("diverge point#: ", len(diverge_targets))
 print("diverge target#: ", len(dts))
-#sys.exit()
+sys.exit()
 
 tracedir = "/data/tonyhu/irq/log/raspi_trace"
 tracedir = "/data/tonyhu/irq/log/linux_enum_l1"

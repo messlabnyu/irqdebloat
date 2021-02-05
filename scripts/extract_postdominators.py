@@ -328,6 +328,8 @@ def is_return_inst(function, address):
 
 def find_next_callinst(bv, function, address):
     bb = function.get_basic_block_at(address)
+    if not bb:
+        return None
     iaddr = address
     while iaddr >= bb.start and iaddr < bb.end:
         if is_call_inst(function, iaddr):
@@ -352,6 +354,7 @@ def reprocess_trace(bv, raw_trace, return_blocks, postdom_out):
     prev_func = []
     fake_trace_cb = []
     shadow_instr = None
+    shadow_next_call = None
     instr_counter = 0
     cur_function = None
     intended_return_block = {}
@@ -370,10 +373,15 @@ def reprocess_trace(bv, raw_trace, return_blocks, postdom_out):
             fp = bv.get_functions_containing(shadow_instr)
             fn = bv.get_functions_containing(next_instr) if next_instr else None
             samefunc = fp and fn and True in [f.start in [x.start for x in fn] for f in fp]
+            # Check function returns
             if next_instr != shadow_instr and samefunc:
+                instaddr = shadow_instr
+            # Check call instruction
+            elif shadow_next_call and bv.get_disassembly(shadow_next_call).split()[-1] == hex(next_instr):
                 instaddr = shadow_instr
             else:
                 shadow_instr = None
+                shadow_next_call = None
                 trace_index += 1
                 instr_counter += 1
                 continue
@@ -508,7 +516,11 @@ def reprocess_trace(bv, raw_trace, return_blocks, postdom_out):
             #            print "shadow instr ", hex(instaddr), " -> ", hex(ret_block.end)
             #        shadow_instr = ret_block.end
             if next_instr and next_instr not in [x.target.start for x in ret_block.outgoing_edges]:
-                shadow_instr = ret_block.end
+                # make sure there's no call or branch in the same basicblock, we probably don't need to worry about return here
+                if not find_next_callinst(bv, func, instaddr) and not bv.get_disassembly(instaddr).startswith("b ") \
+                        and (next_instr < ret_block.start or next_instr >= ret_block.end):   # also next instr not in the same BB
+                    shadow_instr = ret_block.end
+                    shadow_next_call = find_next_callinst(bv, func, ret_block.end)
 
         # check if inst is a `call`, push a guard entry into the trace, to track recursive call
         ci = find_next_callinst(bv, func, instaddr)
@@ -536,6 +548,7 @@ def reprocess_trace(bv, raw_trace, return_blocks, postdom_out):
 
         if shadow_instr and shadow_instr == instaddr:
             shadow_instr = None
+            shadow_next_call = None
         if not shadow_instr:
             trace_index += 1
             instr_counter += 1
