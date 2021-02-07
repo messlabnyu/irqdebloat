@@ -43,10 +43,15 @@ bool enum_l1 = false, enum_l2 = false, enum_l3 = false, enum_l4=false;
 uint64_t l1index = 0, l2index = 0, l3index = 0, l4index = 0;
 uint64_t l1cycle = 0, l2cycle = 0, l3cycle = 0, l4cycle = 0;
 bool l1cycle_updated = false, l2cycle_updated = false, l3cycle_updated = false, l4cycle_updated = false;
+// No auto blacklist for first and last layer
+bool l2_blacklist = false, l3_blacklist= false;
 uint32_t label_number = 1;
 #define HWIRQ_FUZZ_TRY  4
 static int start_new_irq = HWIRQ_FUZZ_TRY;
+#define TIMER_IRQ_ROUNDS    1
+static int irq_rounds = 0;
 
+bool init_calibrate = false;
 bool auto_enum = false;
 bool nosvc = false;
 bool feed_null = false;
@@ -81,6 +86,18 @@ static void ioread(CPUState *env, target_ulong pc, hwaddr addr, uint32_t size, u
     static int fd = -1;
     CPUArchState *cpu = (CPUArchState *)env->env_ptr;
     if (fd == -1) fd = open("/dev/urandom", O_RDONLY);
+    if (init_calibrate && irq_rounds <= TIMER_IRQ_ROUNDS) {
+        *val = 2;
+#ifdef TARGET_ARM
+        ioseq.emplace_back(
+                g_strdup_printf("IO READ pc=" TARGET_FMT_lx " addr=%08" HWADDR_PRIx " size %u val=%08" PRIx64 "\n",
+                    cpu->regs[15], addr, size, *val));
+        if (ioreplay_debug) 
+            printf("IO READ pc=" TARGET_FMT_lx " addr=%08" HWADDR_PRIx " size %u val=%08" PRIx64 "\n",
+                cpu->regs[15], addr, size, *val);
+#endif
+        return;
+    }
     // Feed random value until IRQ fire for the first time
     if (trace_count == trace_start) {
         if (feed_null)
@@ -209,6 +226,14 @@ void track_dead_ioread() {
         }
         break;
     case 2:
+        if (l2_blacklist) {
+            l2_nums.erase(l2_nums.begin()+l2index);
+            if (l2index == l2_nums.size()) {
+                l2index = 0;
+                l2cycle++;
+                l2cycle_updated = true;
+            }
+        }
         if (enum_l3 && l2cycle_updated) {
             l3index++;
             if (l3index == l3_nums.size()) {
@@ -219,6 +244,14 @@ void track_dead_ioread() {
         }
         break;
     case 1:
+        if (l3_blacklist) {
+            l3_nums.erase(l3_nums.begin()+l3index);
+            if (l3index == l3_nums.size()) {
+                l3index = 0;
+                l3cycle++;
+                l3cycle_updated = true;
+            }
+        }
         if (enum_l4 && l3cycle_updated) {
             l4index++;
             if (l4index == l4_nums.size()) {
@@ -247,6 +280,7 @@ static bool before_block_exec_invalidate_opt(CPUState *cpu, TranslationBlock *tb
         printf("Truncate Trace (max block number exceeded)\n");
         qemu_loglevel = 0;
         num_blocks = 0;
+        irq_rounds = 0;
         return true;
     }
     return false;
@@ -322,13 +356,15 @@ static int before_block_exec(CPUState *env, TranslationBlock *tb) {
             trace_count++;
             num_blocks = 0;
 
-            if (cpu_mode == ARM_CPU_MODE_IRQ) {
+            if (nosvc && cpu_mode == ARM_CPU_MODE_IRQ) {
                 track_dead_ioread();
                 start_new_irq = HWIRQ_FUZZ_TRY;
+                irq_rounds++;
             }
             if (!nosvc && cpu_mode == ARM_CPU_MODE_SVC && prev_cpu_mode == ARM_CPU_MODE_IRQ) {
                 track_dead_ioread();
                 start_new_irq = HWIRQ_FUZZ_TRY;
+                irq_rounds++;
             }
         }
         break;
@@ -414,6 +450,14 @@ bool init_plugin(void *self) {
     prepare_hwirq(l2_nums, args, "l2", enum_l2);
     prepare_hwirq(l3_nums, args, "l3", enum_l3);
     prepare_hwirq(l4_nums, args, "l4", enum_l4);
+    init_calibrate = panda_parse_bool(args, "calib");
+    // No auto blacklist for first and last layer
+    if (panda_parse_bool(args, "blacklist")) {
+        if (enum_l4)
+            l3_blacklist = true;
+        if (enum_l3)
+            l2_blacklist = true;
+    }
 
     panda_cb pcb = { .unassigned_io_read = ioread };
     panda_register_callback(self, PANDA_CB_UNASSIGNED_IO_READ, pcb);
