@@ -340,6 +340,8 @@ def find_next_callinst(bv, function, address):
 def check_return(bv, function, address):
     bb = function.get_basic_block_at(address)
     iaddr = address
+    if not bb:
+        return None
     while iaddr >= bb.start and iaddr < bb.end:
         if is_return_inst(function, iaddr):
             return iaddr

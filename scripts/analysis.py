@@ -1,8 +1,11 @@
 import os
 import re
 import sys
+import json
+import time
 import hashlib
 import itertools
+import multiprocessing
 from string import Formatter
 
 from diffslice import DiffSliceAnalyzer
@@ -109,29 +112,30 @@ ostag = "freebsd"
 ostag = sys.argv[5]
 
 
-def preproc_traces():
+def preproc_traces(trdirs):
     # use simple hash to deduplicate traces
     trace_buckets = dict()
-    for curdir,_,traces in os.walk(tracedir):
-        for tr in traces:
-            if not tr.startswith("trace_"):
-                continue
-            if tr.endswith(".pre"):
-                continue
-            trpath = os.path.join(curdir, tr)
-            with open(trpath, 'r') as fd:
-                if not check_status(fd.readline(), ostag):
+    for tdir in trdirs:
+        for curdir,_,traces in os.walk(tdir):
+            for tr in traces:
+                if not tr.startswith("trace_"):
                     continue
-                # normalize qemu trace log
-                normtr = re.sub("Trace 0x[0-9a-f]*", "Trace ", fd.read())
-                # skip invalid traces
-                if "Stopped execution of TB chain" in normtr:
+                if tr.endswith(".pre"):
                     continue
-                tag = hashlib.sha1(normtr).hexdigest()
-            if tag in trace_buckets:
-                trace_buckets[tag].update(trpath)
-            else:
-                trace_buckets[tag] = TraceBucket(trpath)
+                trpath = os.path.join(curdir, tr)
+                with open(trpath, 'r') as fd:
+                    if not check_status(fd.readline(), ostag):
+                        continue
+                    # normalize qemu trace log
+                    normtr = re.sub("Trace 0x[0-9a-f]*", "Trace ", fd.read())
+                    # skip invalid traces
+                    if "Stopped execution of TB chain" in normtr:
+                        continue
+                    tag = hashlib.sha1(normtr).hexdigest()
+                if tag in trace_buckets:
+                    trace_buckets[tag].update(trpath)
+                else:
+                    trace_buckets[tag] = TraceBucket(trpath)
 
     for h,tb in trace_buckets.iteritems():
         if tb.count()>1:
@@ -151,7 +155,7 @@ def preproc_traces():
     return traces
 
 def debugdiff():
-    traces = preproc_traces()
+    traces = preproc_traces([tracedir])
     done_combo = set()
     if os.path.exists(os.path.join(outdir, "done.log")):
         with open(os.path.join(outdir, "done.log"), 'r') as fd:
@@ -171,7 +175,7 @@ def debugdiff():
             fd.write("\n".join(done_combo))
 
 def diff():
-    traces = preproc_traces()
+    traces = preproc_traces([tracedir])
     anal = DiffSliceAnalyzer()
     bv = anal.bn_init(kernelfile)
     anal.bn_analyze(bv, traces, outdir)
@@ -180,7 +184,7 @@ def diff_rawmem():
     anal = DiffSliceAnalyzer()
     bv = anal.rawmem_bn_init(regfile, memfile)
 
-    traces = preproc_traces()
+    traces = preproc_traces([tracedir])
     ## Truncate traces at user space address
     #vmap = {}
     #for va, pa, sz, prot in anal.mm.walk():
@@ -199,7 +203,96 @@ def diff_rawmem():
 
     anal.bn_analyze(bv, traces, outdir)
 
+def anal_mc(reg, mem, tr, out):
+    anal = DiffSliceAnalyzer()
+    bv = anal.rawmem_bn_init(reg, mem)
+    anal.bn_analyze(bv, tr, out, mcore=True)
+
+def diffhand_mc(tracepairs, out):
+    anal = DiffSliceAnalyzer()
+    for tr_x, tr_y in tracepairs:
+        diverge_points = set()
+        branch_targets = set()
+        final_traces = {}
+
+        for tr in [tr_x, tr_y]:
+            with open("{}.pre".format(tr), 'r') as fd:
+                final_traces[tr] = json.load(fd)['trace']
+
+        if final_traces[tr_x][0][0] != final_traces[tr_y][0][0]:
+            continue
+
+        idx = int(tr_x.split('_')[-1].split('.')[0])
+        idy = int(tr_y.split('_')[-1].split('.')[0])
+        diverge, aligned, targets, _ = anal.diff(
+                out,
+                {'trace': final_traces[tr_x], 'id': idx},
+                {'trace': final_traces[tr_y], 'id': idy})
+        diverge_points.difference_update(diverge)
+        branch_targets.update(targets)
+
+        with open(os.path.join(out, "diverge_{:d}_{:d}.json".format(idx, idy)), 'w') as fd:
+            jout = {'diverge': [pt for pt in diverge_points], 'target': {}}
+            for xl in branch_targets:
+                if xl[0] not in jout['target']:
+                    jout['target'][xl[0]] = []
+                jout['target'][xl[0]] = [e for e in set(list(xl[1:]) + jout['target'][xl[0]])]
+            json.dump(jout, fd)
+
+
+def diff_mc():
+    tracewc = []
+    for r,ds,_ in os.walk(tracedir):
+        tracewc.extend([os.path.join(r,d) for d in ds])
+    if not tracewc:
+        tracewc = [tracedir]
+
+    traces = preproc_traces(tracewc)
+
+    NPROC = 16
+    traces_list = [[] for i in range(NPROC)]
+    outs = []
+    for i in range(NPROC):
+        subpath = os.path.join(os.path.normpath(outdir), "diff_"+str(i))
+        if not os.path.exists(subpath):
+            os.makedirs(subpath)
+        outs.append(subpath)
+    for i, tr in enumerate(traces):
+        traces_list[i%NPROC].append({'dir': tr['dir'], 'full_trace': [t for t in tr['full_trace']]})
+
+    # preprocess
+    pool = [multiprocessing.Process(target=anal_mc, args=(regfile, memfile, traces_list[i], outs[i])) for i in range(NPROC)]
+    map(lambda x: x.start(), pool)
+    while True in map(lambda x: x.is_alive(), pool):
+        time.sleep(60)
+        print "Prep: ", map(lambda x: x.is_alive(), pool)
+
+    # collect preprocess log
+    diffdir = os.path.join(os.path.normpath(outdir), "diff")
+    if not os.path.exists(diffdir):
+        os.makedirs(diffdir)
+    preplog = {'traces': []}
+    for o in outs:
+        with open(os.path.join(o, "preprocessed.log"), 'r') as fd:
+            data = json.load(fd)
+        preplog['traces'].extend(data['traces'])
+    with open(os.path.join(diffdir, "preprocessed.log"), 'w') as fd:
+        json.dump(preplog, fd)
+
+    # diff
+    diffsets = [[] for i in range(NPROC)]
+    counter = 0
+    for tr_x, tr_y in itertools.combinations(preplog['traces'], 2):
+        diffsets[counter%NPROC].append((tr_x, tr_y))
+        counter += 1
+    pool = [multiprocessing.Process(target=diffhand_mc, args=(diffsets[i], diffdir)) for i in range(NPROC)]
+    map(lambda x: x.start(), pool)
+    while True in map(lambda x: x.is_alive(), pool):
+        time.sleep(60)
+        print "Diff: ", map(lambda x: x.is_alive(), pool)
+
 if __name__ == "__main__":
     #debugdiff()
     #diff()
-    diff_rawmem()
+    #diff_rawmem()
+    diff_mc()

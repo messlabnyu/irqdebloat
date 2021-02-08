@@ -287,7 +287,7 @@ class DiffSliceAnalyzer(object):
         bv.update_analysis_and_wait()
         return bv
 
-    def bn_analyze(self, bv, raw_traces, outdir):
+    def bn_analyze(self, bv, raw_traces, outdir, mcore=False):
         postdom_out = {}
         final_traces = {}
         trace_out = {}
@@ -353,6 +353,9 @@ class DiffSliceAnalyzer(object):
         # save log
         with open(donelog, 'w') as fd:
             json.dump(pre_trace, fd)
+
+        if mcore:
+            return
 
         # load pre-processed traces
 
