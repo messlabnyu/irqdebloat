@@ -87,7 +87,8 @@ static void ioread(CPUState *env, target_ulong pc, hwaddr addr, uint32_t size, u
     CPUArchState *cpu = (CPUArchState *)env->env_ptr;
     if (fd == -1) fd = open("/dev/urandom", O_RDONLY);
     if (init_calibrate && irq_rounds <= TIMER_IRQ_ROUNDS) {
-        *val = 2;
+        //*val = 2;
+        assert(read(fd, val, sizeof(*val)) > 0);
 #ifdef TARGET_ARM
         ioseq.emplace_back(
                 g_strdup_printf("IO READ pc=" TARGET_FMT_lx " addr=%08" HWADDR_PRIx " size %u val=%08" PRIx64 "\n",
@@ -328,10 +329,16 @@ static int before_block_exec(CPUState *env, TranslationBlock *tb) {
                 if (l4cycle) {
                     printf("Done l4 irq replay\n");
                     exit(0);
+                } else if (l2_nums.size() == 0 or l3_nums.size() == 0) {
+                    printf("l4: l2/3 empty\n");
+                    exit(0);
                 }
             } else if (enum_l3) {
                 if (l3cycle) {
                     printf("Done l3 irq replay\n");
+                    exit(0);
+                } else if (l2_nums.size() == 0) {
+                    printf("l3: l2 empty\n");
                     exit(0);
                 }
             } else if (enum_l2) {
