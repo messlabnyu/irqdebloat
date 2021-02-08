@@ -35,7 +35,7 @@ void qemu_system_shutdown_request(void);
 #include <deque>
 #include <map>
 
-#define MAX_GENERATIONS 2
+#define MAX_GENERATIONS 10
 
 typedef std::pair<target_ulong,target_ulong> edge_t;
 
@@ -61,14 +61,47 @@ bool fiq = false;
 #define CPU_INTERRUPT_FIQ 0
 #endif
 
-#define MAX_BLOCKS_SINCE_NEW_COV 100
+#define MAX_BLOCKS_SINCE_NEW_COV 1000000
+#define MAX_BLOCKS               1000000
 int num_blocks_since_new_cov = 0;
+int num_blocks_total = 0;
 
 #ifdef DEBUG
 #define dbgprintf(...) do { printf(__VA_ARGS__); } while(0)
 #else
 #define dbgprintf(...) do{ } while (0)
 #endif
+
+enum exit_reason {
+    REASON_TIMEOUT,
+    REASON_MAXBLOCKS,
+    REASON_ABORT,
+    REASON_NOCOV
+};
+
+typedef struct _trace_entry {
+    uint32_t kind; // 0 => block, 1 => ioval
+    uint32_t pc;
+    uint32_t addr;
+    uint32_t val;
+} trace_entry;
+
+trace_entry make_io_log(uint32_t pc, uint32_t addr, uint32_t val) {
+    trace_entry t = {1, pc, addr, val};
+    return t;
+}
+
+trace_entry make_block_log(uint32_t pc) {
+    trace_entry t = {0, pc, 0, 0};
+    return t;
+}
+
+trace_entry make_exit_log(enum exit_reason e) {
+    trace_entry t = {2, 0, 0, e};
+    return t;
+}
+
+std::vector<trace_entry> trace;
 
 // This function and the one below have to be carefully kept in sync
 static void report_coverage(int fd) {
@@ -91,6 +124,12 @@ static void report_coverage(int fd) {
         edge_t edge = kvp.first;
         write(fd, &edge.first, sizeof(edge.first));
         write(fd, &edge.second, sizeof(edge.second));
+    }
+    // Serialize trace
+    n = trace.size();
+    write(fd, &n, sizeof(n));
+    for (auto &te : trace) {
+        write(fd, &te, sizeof(trace_entry));
     }
     close(fd);
 }
@@ -131,10 +170,13 @@ void try_jit(target_ulong bb) {
 
 // Set of { (io_addrs, edges) } where edges is set of (src,dst)
 std::unordered_set<covtype,Hash> coverage;
+std::unordered_set<uint32_t> bbcov;
 
 static void save_coverage(
         std::vector<unsigned long> &ioseq,
-        const covtype &cov
+        const covtype &cov,
+        trace_entry *t,
+        size_t n_t
         ) {
     std::stringstream s;
     s << outdir << "/";
@@ -151,6 +193,19 @@ static void save_coverage(
     fprintf(f, "\n");
     for (auto edge : cov.second) {
         fprintf(f, TARGET_FMT_lx " " TARGET_FMT_lx "\n", edge.first, edge.second);
+    }
+    fclose(f);
+    // Write the binary trace
+    s.str("");
+    s << outdir << "/";
+    for (auto ioi = ioseq.begin() ; ioi != ioseq.end(); ioi++) {
+        s << std::hex << *ioi;
+        if (ioi != ioseq.end() - 1) s << ",";
+    }
+    s << ".btrace";
+    f = fopen(s.str().c_str(),"wb");
+    for (unsigned i = 0; i < n_t; i++) {
+        fwrite(&t[i], sizeof(trace_entry), 1, f);
     }
     fclose(f);
 }
@@ -186,19 +241,33 @@ static bool update_coverage(int fd, std::vector<unsigned long> &ioseq) {
         try_jit(src);
         try_jit(dst);
     }
+    // Deserialize trace
+    read(fd, &n, sizeof(n));
+    trace_entry *child_trace = (trace_entry *)malloc(n*sizeof(trace_entry));
+    for (unsigned i = 0; i < n; i++) {
+        read(fd, &child_trace[i], sizeof(trace_entry));
+    }
+    
     dbgprintf("Run produced %zu ioaddrs and %zu edges\n",
             local_ioaddrs.size(), local_cov.size());
     //auto res = coverage.insert(std::make_pair(local_ioaddrs, local_cov));
     // temp: only count I/O addresses as new coverage
-    auto res = coverage.insert(std::make_pair(local_ioaddrs, std::set<edge_t>()));
-    if (res.second) {
+    //auto res = coverage.insert(std::make_pair(local_ioaddrs, std::set<edge_t>()));
+    bool newcov = false;
+    for (auto &kvp : local_cov) {
+        auto r1 = bbcov.insert(kvp.first);
+        newcov |= r1.second;
+        auto r2 = bbcov.insert(kvp.second);
+        newcov |= r2.second;
+    }
+    if (newcov) {
 #ifdef DEBUG
         dbgprintf("Woo, we received new coverage!\n");
         dbgprintf("  ioseq: { ");
         for (auto i : ioseq) dbgprintf("%#lx ", i);
         dbgprintf("}\n");
 #endif
-        save_coverage(ioseq, std::make_pair(local_ioaddrs, local_cov));
+        save_coverage(ioseq, std::make_pair(local_ioaddrs, local_cov), child_trace, n);
     }
     else {
 #ifdef DEBUG
@@ -208,10 +277,11 @@ static bool update_coverage(int fd, std::vector<unsigned long> &ioseq) {
         dbgprintf("}\n");
 #endif
         // This is going to create a ton of files
-        //save_coverage(ioseq, std::make_pair(local_ioaddrs, local_cov));
+        save_coverage(ioseq, std::make_pair(local_ioaddrs, local_cov), child_trace, n);
         ioseq.clear();
     }
-    return res.second;
+    free(child_trace);
+    return newcov;
 }
 
 // returns the socket used to communicate with the child
@@ -254,7 +324,7 @@ void genconst(std::vector<uint64_t> &prefix, std::deque<std::vector<uint64_t>> &
 
 // Sliding windows of bits
 void genwin(std::vector<uint64_t> &prefix, std::deque<std::vector<uint64_t>> &out) {
-    for (int i = 1; i <= 16; i++) {
+    for (int i = 1; i <= 4; i++) {
         for (int j = 0; j < 32-i+1; j++) {
             out.push_back(prefix); out.back().push_back(((1L << i) - 1) << j);
         }
@@ -264,7 +334,7 @@ void genwin(std::vector<uint64_t> &prefix, std::deque<std::vector<uint64_t>> &ou
 // Random values
 void genrand(std::vector<uint64_t> &prefix, std::deque<std::vector<uint64_t>> &out) {
     int fd = open("/dev/urandom", O_RDONLY);
-    for (int i = 0; i < 1024; i++) {
+    for (int i = 0; i < 128; i++) {
         uint64_t rv;
         read(fd,&rv,sizeof(rv));
         out.push_back(prefix); out.back().push_back(rv);
@@ -287,6 +357,7 @@ void seq2iovals(std::vector<uint64_t> &seq) {
 target_ulong prev = -1;
 static int before_block_exec(CPUState *env, TranslationBlock *tb) {
     if (child) {
+        num_blocks_total++;
         // We're in the child, and it's a normal basic block.
         // Update coverage
         if (prev != -1) {
@@ -296,6 +367,7 @@ static int before_block_exec(CPUState *env, TranslationBlock *tb) {
             else
                 num_blocks_since_new_cov = 0;
             edges[edge]++;
+            trace.push_back(make_block_log(tb->pc));
         }
         prev = tb->pc;
         // Termination conditions: timeout or went too long without seeing
@@ -304,11 +376,25 @@ static int before_block_exec(CPUState *env, TranslationBlock *tb) {
         // we want to bypass because they cause deadlocks.
         if ((time(NULL) - start) > fuzz_timeout) {
             dbgprintf("Done with fuzz (timeout), cya\n");
+            trace.push_back(make_exit_log(REASON_TIMEOUT));
             report_coverage(comm_socket);
             _Exit(0);
         }
         if (num_blocks_since_new_cov > MAX_BLOCKS_SINCE_NEW_COV) {
             dbgprintf("Done with fuzz (cov fixpoint), cya\n");
+            trace.push_back(make_exit_log(REASON_NOCOV));
+            report_coverage(comm_socket);
+            _Exit(0);
+        }
+        if (num_blocks_total > MAX_BLOCKS) {
+            dbgprintf("Done with fuzz (max blocks), cya\n");
+            trace.push_back(make_exit_log(REASON_MAXBLOCKS));
+            report_coverage(comm_socket);
+            _Exit(0);
+        }
+        if (tb->pc == 0xffff0010) {
+            dbgprintf("Done with fuzz (data abort), cya\n");
+            trace.push_back(make_exit_log(REASON_ABORT));
             report_coverage(comm_socket);
             _Exit(0);
         }
@@ -454,6 +540,7 @@ static void ioread(CPUState *env, target_ulong pc, hwaddr addr, uint32_t size, u
     }
     ioaddrs.insert(addr);
     *val = fuzz;
+    trace.push_back(make_io_log(pc,addr,fuzz));
 }
 
 void after_machine_init(CPUState *env) {
@@ -481,7 +568,7 @@ bool init_plugin(void *self) {
     pcb.after_machine_init = after_machine_init;
     panda_register_callback(self, PANDA_CB_AFTER_MACHINE_INIT, pcb);
 
-    panda_disable_tb_chaining();
+    //panda_disable_tb_chaining();
     panda_enable_precise_pc();
 
     return true;
