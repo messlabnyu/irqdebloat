@@ -93,6 +93,7 @@ def get_return_blocks(return_block_map, bv, raw_trace=None, tracefile=None, merg
     inst_lookahead = None
     final_traces = {}
     local_trace = {}
+    function_cache = set()
     for inst in trace['full_trace']:
         instaddr = inst + image_base
         if vm:
@@ -127,15 +128,8 @@ def get_return_blocks(return_block_map, bv, raw_trace=None, tracefile=None, merg
             print(" >Found Function ", time.clock()-timecheck)
             timecheck = time.clock()
 
-        # append all "end" nodes of current function
-        for f in fun:
-            for bb in f.basic_blocks:
-                if not bb.outgoing_edges or check_return(bv, f, bb.start):
-                    return_blocks.add(bb)
-
-        if perf:
-            print(" >> Init Return block Found ", time.clock()-timecheck)
-            timecheck = time.clock()
+        # cache function for later out-of-loop return block search
+        function_cache.update([f for f in fun])
 
         # NOTE(hzh): BN will get 2 basic blocks given 1 instruction address, we pick one with smaller addr
         #   ```
@@ -189,6 +183,13 @@ def get_return_blocks(return_block_map, bv, raw_trace=None, tracefile=None, merg
         if perf:
             print(" >Done Fixingup ", time.clock()-timecheck)
             timecheck = time.clock()
+
+    # append all "end" nodes of current function
+    # Note: turns out enumerating function basic blocks is really expensive in BN (it takes 0.05s)
+    for f in function_cache:
+        for bb in f.basic_blocks:
+            if not bb.outgoing_edges or check_return(bv, f, bb.start):
+                return_blocks.add(bb)
 
     for bb in return_blocks:
         if bb.function not in return_block_map:
@@ -324,6 +325,16 @@ def is_return_inst(function, address):
         if (llil.operation == LowLevelILOperation.LLIL_JUMP_TO or \
                 llil.operation == LowLevelILOperation.LLIL_JUMP):
             return True
+    #istr = function.view.get_disassembly(address)
+    ## ldm[cond] r, {pc}
+    #if istr.startswith("ldm") and 'pc' in istr[istr.find(','):]:
+    #    return True
+    ## ldr[cond] pc, [r]
+    #if istr.startswith("ldr") and 'pc' in istr.split(',')[0]:
+    #    return True
+    ## mov pc, r
+    #if istr.startswith("mov") and 'pc' in istr.split(',')[0]:
+    #    return True
     return False
 
 def find_next_callinst(bv, function, address):
