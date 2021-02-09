@@ -37,6 +37,33 @@ void qemu_system_shutdown_request(void);
 
 #define MAX_GENERATIONS 10
 
+/* Returns an integer in the range [0, n).
+ *
+ * Uses rand(), and so is affected-by/affects the same seed.
+ */
+int randint(int n) {
+  if ((n - 1) == RAND_MAX) {
+    return rand();
+  } else {
+    // Supporting larger values for n would requires an even more
+    // elaborate implementation that combines multiple calls to rand()
+    assert (n <= RAND_MAX);
+
+    // Chop off all of the values that would cause skew...
+    int end = RAND_MAX / n; // truncate skew
+    assert (end > 0);
+    end *= n;
+
+    // ... and ignore results from rand() that fall above that limit.
+    // (Worst case the loop condition should succeed 50% of the time,
+    // so we can expect to bail out of this loop pretty quickly.)
+    int r;
+    while ((r = rand()) >= end);
+
+    return r % n;
+  }
+}
+
 typedef std::pair<target_ulong,target_ulong> edge_t;
 
 // (src,dst) -> hit count
@@ -79,25 +106,37 @@ enum exit_reason {
     REASON_NOCOV
 };
 
+enum entry_kind {
+    ENTRY_BLOCK,
+    ENTRY_IOVAL_READ,
+    ENTRY_IOVAL_WRITE,
+    ENTRY_EXIT
+};
+
 typedef struct _trace_entry {
-    uint32_t kind; // 0 => block, 1 => ioval
+    uint32_t kind;
     uint32_t pc;
     uint32_t addr;
     uint32_t val;
 } trace_entry;
 
-trace_entry make_io_log(uint32_t pc, uint32_t addr, uint32_t val) {
-    trace_entry t = {1, pc, addr, val};
+trace_entry make_io_rlog(uint32_t pc, uint32_t addr, uint32_t val) {
+    trace_entry t = {ENTRY_IOVAL_READ, pc, addr, val};
+    return t;
+}
+
+trace_entry make_io_wlog(uint32_t pc, uint32_t addr, uint32_t val) {
+    trace_entry t = {ENTRY_IOVAL_WRITE, pc, addr, val};
     return t;
 }
 
 trace_entry make_block_log(uint32_t pc) {
-    trace_entry t = {0, pc, 0, 0};
+    trace_entry t = {ENTRY_BLOCK, pc, 0, 0};
     return t;
 }
 
 trace_entry make_exit_log(enum exit_reason e) {
-    trace_entry t = {2, 0, 0, e};
+    trace_entry t = {ENTRY_EXIT, 0, 0, e};
     return t;
 }
 
@@ -277,7 +316,7 @@ static bool update_coverage(int fd, std::vector<unsigned long> &ioseq) {
         dbgprintf("}\n");
 #endif
         // This is going to create a ton of files
-        save_coverage(ioseq, std::make_pair(local_ioaddrs, local_cov), child_trace, n);
+        //save_coverage(ioseq, std::make_pair(local_ioaddrs, local_cov), child_trace, n);
         ioseq.clear();
     }
     free(child_trace);
@@ -519,6 +558,7 @@ static int before_block_exec(CPUState *env, TranslationBlock *tb) {
 
 static void iowrite(CPUState *env, target_ulong pc, hwaddr addr, uint32_t size, uint64_t *val) {
     ioaddrs.insert(addr);
+    trace.push_back(make_io_wlog(pc,addr,*val));
 }
 
 static void ioread(CPUState *env, target_ulong pc, hwaddr addr, uint32_t size, uint64_t *val) {
@@ -527,11 +567,20 @@ static void ioread(CPUState *env, target_ulong pc, hwaddr addr, uint32_t size, u
     uint64_t fuzz = 0;
     if (fd == -1) fd = open("/dev/urandom", O_RDONLY);
     if (cur_ioval >= num_iovals) {
-        uint64_t mask = 0xffffffffffffffff;
-        int r = read(fd, &fuzz, sizeof(fuzz));
-        assert(r > 0);
-        mask = mask >> (64 - (size * 8));
-        fuzz &= mask;
+        // Randomly do either (1 << i) or a true random value
+        int coinflip = randint(2);
+        if (coinflip) {
+            uint64_t mask = 0xffffffffffffffff;
+            int r = read(fd, &fuzz, sizeof(fuzz));
+            assert(r > 0);
+            mask = mask >> (64 - (size * 8));
+            fuzz &= mask;
+        }
+        else {
+            int bitpos = randint(33) - 1;
+			if (bitpos == -1) fuzz = 0;
+			else fuzz = 1 << bitpos;
+		}
         //dbgprintf("IOMEM_READ %u %lx %" PRIx64 "\n", size, addr, fuzz);
     }
     else {
@@ -540,7 +589,7 @@ static void ioread(CPUState *env, target_ulong pc, hwaddr addr, uint32_t size, u
     }
     ioaddrs.insert(addr);
     *val = fuzz;
-    trace.push_back(make_io_log(pc,addr,fuzz));
+    trace.push_back(make_io_rlog(pc,addr,fuzz));
 }
 
 void after_machine_init(CPUState *env) {
