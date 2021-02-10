@@ -225,16 +225,16 @@ void track_dead_ioread() {
                 l2cycle_updated = true;
             }
         }
-        break;
+        //break;
     case 2:
-        if (l2_blacklist) {
-            l2_nums.erase(l2_nums.begin()+l2index);
-            if (l2index == l2_nums.size()) {
-                l2index = 0;
-                l2cycle++;
-                l2cycle_updated = true;
-            }
-        }
+        //if (l2_blacklist) {
+        //    l2_nums.erase(l2_nums.begin()+l2index);
+        //    if (l2index == l2_nums.size()) {
+        //        l2index = 0;
+        //        l2cycle++;
+        //        l2cycle_updated = true;
+        //    }
+        //}
         if (enum_l3 && l2cycle_updated) {
             l3index++;
             if (l3index == l3_nums.size()) {
@@ -243,16 +243,16 @@ void track_dead_ioread() {
                 l3cycle_updated = true;
             }
         }
-        break;
+        //break;
     case 1:
-        if (l3_blacklist) {
-            l3_nums.erase(l3_nums.begin()+l3index);
-            if (l3index == l3_nums.size()) {
-                l3index = 0;
-                l3cycle++;
-                l3cycle_updated = true;
-            }
-        }
+        //if (l3_blacklist) {
+        //    l3_nums.erase(l3_nums.begin()+l3index);
+        //    if (l3index == l3_nums.size()) {
+        //        l3index = 0;
+        //        l3cycle++;
+        //        l3cycle_updated = true;
+        //    }
+        //}
         if (enum_l4 && l3cycle_updated) {
             l4index++;
             if (l4index == l4_nums.size()) {
@@ -261,7 +261,7 @@ void track_dead_ioread() {
                 l4cycle_updated = true;
             }
         }
-        break;
+        //break;
     default:
         break;
     }
