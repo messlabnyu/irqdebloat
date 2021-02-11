@@ -20,6 +20,10 @@ printf "cp15.sctlr_el:\n"
 p/x $env->cp15.sctlr_el
 printf "cp15.vbar_el:\n"
 p/x $env->cp15.vbar_el
+printf "cp15.tpidrprw_s:\n"
+p/x $env->cp15.tpidrprw_s
+printf "cp15.cpacr_el1:\n"
+p/x $env->cp15.cpacr_el1
 printf "uncached_cpsr:\n"
 p/x $env->uncached_cpsr
 printf "features:\n"
