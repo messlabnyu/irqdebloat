@@ -64,6 +64,25 @@ int randint(int n) {
   }
 }
 
+#ifdef TARGET_ARM
+static target_ulong vbar_addr(CPUState *cs) {
+    CPUArchState *env = (CPUArchState *)cs->env_ptr;
+    target_ulong addr = 0;
+    if (A32_BANKED_CURRENT_REG_GET(env, sctlr) & SCTLR_V) {
+        /* High vectors. When enabled, base address cannot be remapped. */
+        addr += 0xffff0000;
+    } else {
+        /* ARM v7 architectures provide a vector base address register to remap
+         * the interrupt vector table.
+         * This register is only followed in non-monitor mode, and is banked.
+         * Note: only bits 31:5 are valid.
+         */
+        addr += A32_BANKED_CURRENT_REG_GET(env, vbar);
+    }
+    return addr;
+}
+#endif
+
 typedef std::pair<target_ulong,target_ulong> edge_t;
 
 // (src,dst) -> hit count
@@ -88,8 +107,8 @@ bool fiq = false;
 #define CPU_INTERRUPT_FIQ 0
 #endif
 
-#define MAX_BLOCKS_SINCE_NEW_COV 1000000
-#define MAX_BLOCKS               1000000
+#define MAX_BLOCKS_SINCE_NEW_COV 10000
+#define MAX_BLOCKS               100000
 int num_blocks_since_new_cov = 0;
 int num_blocks_total = 0;
 
@@ -431,12 +450,21 @@ static int before_block_exec(CPUState *env, TranslationBlock *tb) {
             report_coverage(comm_socket);
             _Exit(0);
         }
-        if (tb->pc == 0xffff0010) {
-            dbgprintf("Done with fuzz (data abort), cya\n");
+#ifdef TARGET_ARM
+        // Bail out when we encounter an exception
+        target_ulong vbase = vbar_addr(env);
+        if (tb->pc == vbase+0x10 || tb->pc == vbase+0x0c) {
+            dbgprintf("Done with fuzz (data/prefetch abort), cya\n");
             trace.push_back(make_exit_log(REASON_ABORT));
             report_coverage(comm_socket);
             _Exit(0);
         }
+#endif
+        // This is a bit of a hack around the fact that we don't have a real
+        // model of the interrupt controller. In a real system something would
+        // ACK the IRQ, but this will never happen here. So instead we just
+        // ACK after a few basic blocks.
+        if (num_blocks_total > 5) env->interrupt_request = 0;
     }
     else {
         dbgprintf("Hello, I'm the parent and I'll be running the show today. My PID is %d\n", getpid());
@@ -617,7 +645,7 @@ bool init_plugin(void *self) {
     pcb.after_machine_init = after_machine_init;
     panda_register_callback(self, PANDA_CB_AFTER_MACHINE_INIT, pcb);
 
-    //panda_disable_tb_chaining();
+    panda_disable_tb_chaining();
     panda_enable_precise_pc();
 
     return true;

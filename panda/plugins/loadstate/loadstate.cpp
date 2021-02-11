@@ -64,6 +64,16 @@ void load_states(CPUState *env, const char *memfile, const char *cpufile) {
     printf("spsr = %#x\n", cpuregs["spsr"].as<uint32_t>());
     envp->spsr = cpuregs["spsr"].as<uint32_t>();
 
+    if (cpuregs["cp15.tpidrprw_s"]) {
+        printf("cp15.tpidrprw_s = %#x\n", cpuregs["cp15.tpidrprw_s"].as<uint32_t>());
+        envp->cp15.tpidrprw_s = cpuregs["cp15.tpidrprw_s"].as<uint32_t>();
+    }
+
+    if (cpuregs["cp15.cpacr_el1"]) {
+        printf("cp15.cpacr_el1 = %#x\n", cpuregs["cp15.cpacr_el1"].as<uint32_t>());
+        envp->cp15.cpacr_el1 = cpuregs["cp15.cpacr_el1"].as<uint32_t>();
+    }
+
     printf("TTBR0_EL[] = { ");
     for (int i = 0; i < 4; i++){
         printf("%#x ", cpuregs["cp15.ttbr0_el"][i].as<uint32_t>());
