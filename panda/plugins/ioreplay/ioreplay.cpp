@@ -339,36 +339,38 @@ static int before_block_exec(CPUState *env, TranslationBlock *tb) {
 
 
             // check exit
-            if (!enum_l1 && !enum_l2 && !enum_l3 && !enum_l4) {
-                if (qemu_clock_get_ms(QEMU_CLOCK_REALTIME) - start_time > MAX_TRACE_TIMER_MS) {
-                    printf("Done with ioreplay (max time %d ms)\n", MAX_TRACE_TIMER_MS);
-                    exit(0);
-                }
-            } else if (enum_l4) {   // l4 cycle detection in the highest priority
-                if (l4cycle) {
-                    printf("Done l4 irq replay\n");
-                    exit(0);
-                } else if (l2_nums.size() == 0 or l3_nums.size() == 0) {
-                    printf("l4: l2/3 empty\n");
-                    exit(0);
-                }
-            } else if (enum_l3) {
-                if (l3cycle) {
-                    printf("Done l3 irq replay\n");
-                    exit(0);
-                } else if (l2_nums.size() == 0) {
-                    printf("l3: l2 empty\n");
-                    exit(0);
-                }
-            } else if (enum_l2) {
-                if (l2cycle) {
-                    printf("Done l2 irq replay\n");
-                    exit(0);
-                }
-            } else if (enum_l1) {
-                if (l1cycle) {
-                    printf("Done l1 irq replay\n");
-                    exit(0);
+            if (replay_ioseqs.empty()) {
+                if (!enum_l1 && !enum_l2 && !enum_l3 && !enum_l4) {
+                    if (qemu_clock_get_ms(QEMU_CLOCK_REALTIME) - start_time > MAX_TRACE_TIMER_MS) {
+                        printf("Done with ioreplay (max time %d ms)\n", MAX_TRACE_TIMER_MS);
+                        exit(0);
+                    }
+                } else if (enum_l4) {   // l4 cycle detection in the highest priority
+                    if (l4cycle) {
+                        printf("Done l4 irq replay\n");
+                        exit(0);
+                    } else if (l2_nums.size() == 0 or l3_nums.size() == 0) {
+                        printf("l4: l2/3 empty\n");
+                        exit(0);
+                    }
+                } else if (enum_l3) {
+                    if (l3cycle) {
+                        printf("Done l3 irq replay\n");
+                        exit(0);
+                    } else if (l2_nums.size() == 0) {
+                        printf("l3: l2 empty\n");
+                        exit(0);
+                    }
+                } else if (enum_l2) {
+                    if (l2cycle) {
+                        printf("Done l2 irq replay\n");
+                        exit(0);
+                    }
+                } else if (enum_l1) {
+                    if (l1cycle) {
+                        printf("Done l1 irq replay\n");
+                        exit(0);
+                    }
                 }
             }
 
