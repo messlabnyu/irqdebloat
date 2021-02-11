@@ -50,6 +50,8 @@ uint32_t label_number = 1;
 static int start_new_irq = HWIRQ_FUZZ_TRY;
 #define TIMER_IRQ_ROUNDS    1
 static int irq_rounds = 0;
+static uint64_t replay_line = 0, replay_index = 0;
+static std::vector<std::vector<uint64_t>> replay_ioseqs;
 
 bool init_calibrate = false;
 bool auto_enum = false;
@@ -82,6 +84,17 @@ static uint64_t trace_start = 0;
 static uint64_t trace_count = 0;
 static std::vector<gchar*> ioseq;
 
+#ifdef TARGET_ARM
+#define LOG_IO_TRACE \
+        ioseq.emplace_back( \
+                g_strdup_printf("IO READ pc=" TARGET_FMT_lx " addr=%08" HWADDR_PRIx " size %u val=%08" PRIx64 "\n", \
+                    cpu->regs[15], addr, size, *val)); \
+        if (ioreplay_debug) \
+            printf("IO READ pc=" TARGET_FMT_lx " addr=%08" HWADDR_PRIx " size %u val=%08" PRIx64 "\n", \
+                cpu->regs[15], addr, size, *val);
+#else
+#define LOG_IO_TRACE
+#endif
 static void ioread(CPUState *env, target_ulong pc, hwaddr addr, uint32_t size, uint64_t *val) {
     static int fd = -1;
     CPUArchState *cpu = (CPUArchState *)env->env_ptr;
@@ -89,14 +102,7 @@ static void ioread(CPUState *env, target_ulong pc, hwaddr addr, uint32_t size, u
     if (init_calibrate && irq_rounds <= TIMER_IRQ_ROUNDS) {
         //*val = 2;
         assert(read(fd, val, sizeof(*val)) > 0);
-#ifdef TARGET_ARM
-        ioseq.emplace_back(
-                g_strdup_printf("IO READ pc=" TARGET_FMT_lx " addr=%08" HWADDR_PRIx " size %u val=%08" PRIx64 "\n",
-                    cpu->regs[15], addr, size, *val));
-        if (ioreplay_debug) 
-            printf("IO READ pc=" TARGET_FMT_lx " addr=%08" HWADDR_PRIx " size %u val=%08" PRIx64 "\n",
-                cpu->regs[15], addr, size, *val);
-#endif
+        LOG_IO_TRACE
         return;
     }
     // Feed random value until IRQ fire for the first time
@@ -114,6 +120,17 @@ static void ioread(CPUState *env, target_ulong pc, hwaddr addr, uint32_t size, u
         return;
     }
 #endif
+    // Replay from ioseq log
+    if (!replay_ioseqs.empty()) {
+        if (replay_index < replay_ioseqs[replay_line].size())
+            *val = replay_ioseqs[replay_line][replay_index++];
+        else if (feed_null)
+            *val = 0;
+        else
+            assert(read(fd, val, sizeof(*val)) > 0);
+        LOG_IO_TRACE
+        return;
+    }
     //ioaddrs_seen.insert(addr);
     if (!iovals.empty()) {
         *val = iovals.front();
@@ -202,14 +219,16 @@ static void ioread(CPUState *env, target_ulong pc, hwaddr addr, uint32_t size, u
         //*val = (1 << 8);
         //start_new_irq = 0;
     }
-#ifdef TARGET_ARM
-    ioseq.emplace_back(
-            g_strdup_printf("IO READ pc=" TARGET_FMT_lx " addr=%08" HWADDR_PRIx " size %u val=%08" PRIx64 "\n",
-                cpu->regs[15], addr, size, *val));
-    if (ioreplay_debug) 
-        printf("IO READ pc=" TARGET_FMT_lx " addr=%08" HWADDR_PRIx " size %u val=%08" PRIx64 "\n",
-            cpu->regs[15], addr, size, *val);
-#endif
+    LOG_IO_TRACE
+}
+
+void check_replay_status() {
+    if (!replay_ioseqs.empty()) {
+        replay_line++;
+        replay_index = 0;
+        if (replay_line == replay_ioseqs.size())
+            exit(0);
+    }
 }
 
 void track_dead_ioread() {
@@ -365,11 +384,13 @@ static int before_block_exec(CPUState *env, TranslationBlock *tb) {
 
             if (nosvc && cpu_mode == ARM_CPU_MODE_IRQ) {
                 track_dead_ioread();
+                check_replay_status();
                 start_new_irq = HWIRQ_FUZZ_TRY;
                 irq_rounds++;
             }
             if (!nosvc && cpu_mode == ARM_CPU_MODE_SVC && prev_cpu_mode == ARM_CPU_MODE_IRQ) {
                 track_dead_ioread();
+                check_replay_status();
                 start_new_irq = HWIRQ_FUZZ_TRY;
                 irq_rounds++;
             }
@@ -425,6 +446,24 @@ static void prepare_hwirq(std::deque<uint64_t> &preirq, panda_arg_list *args, co
     }
 }
 
+// Replay log are formatted with one sequence of iovals per line, each ioval is in hex, comma seperated
+static void load_replay_log(const char *log) {
+    std::string line, s;
+    std::ifstream fs(log);
+    std::istringstream ss;
+
+    // bootstrap replay ioseqs, we will skip the first one
+    replay_ioseqs.emplace_back(std::vector<uint64_t>());
+    while (std::getline(fs, line)) {
+        ss.str(line);
+        ss.clear();
+        replay_ioseqs.emplace_back(std::vector<uint64_t>());
+        while (std::getline(ss, s, ','))
+            replay_ioseqs.back().emplace_back(strtoul(s.c_str(), NULL, 16));
+    }
+    fs.close();
+}
+
 bool init_plugin(void *self) {
     panda_require("loadstate");
     if (!init_loadstate_api()) return false;
@@ -465,6 +504,9 @@ bool init_plugin(void *self) {
         if (enum_l3)
             l2_blacklist = true;
     }
+    const char *_replay_log = panda_parse_string(args, "replay", "");
+    if (_replay_log[0])
+        load_replay_log(_replay_log);
 
     panda_cb pcb = { .unassigned_io_read = ioread };
     panda_register_callback(self, PANDA_CB_UNASSIGNED_IO_READ, pcb);
