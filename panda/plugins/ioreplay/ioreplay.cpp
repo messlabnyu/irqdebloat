@@ -54,6 +54,7 @@ static uint64_t replay_line = 0, replay_index = 0;
 static std::vector<std::vector<uint64_t>> replay_ioseqs;
 static char *trace_seq_log = nullptr;
 static std::vector<target_ulong> trace_seq;
+static bool log_compact = 0;
 
 bool compact_output = false;
 bool init_calibrate = false;
@@ -89,9 +90,10 @@ static std::vector<gchar*> ioseq;
 
 #ifdef TARGET_ARM
 #define LOG_IO_TRACE \
-        ioseq.emplace_back( \
-                g_strdup_printf("IO READ pc=" TARGET_FMT_lx " addr=%08" HWADDR_PRIx " size %u val=%08" PRIx64 "\n", \
-                    cpu->regs[15], addr, size, *val)); \
+        if (!compact_output) \
+            ioseq.emplace_back( \
+                    g_strdup_printf("IO READ pc=" TARGET_FMT_lx " addr=%08" HWADDR_PRIx " size %u val=%08" PRIx64 "\n", \
+                        cpu->regs[15], addr, size, *val)); \
         if (ioreplay_debug) \
             printf("IO READ pc=" TARGET_FMT_lx " addr=%08" HWADDR_PRIx " size %u val=%08" PRIx64 "\n", \
                 cpu->regs[15], addr, size, *val);
@@ -291,6 +293,11 @@ void track_dead_ioread() {
 
 static void top_loop(CPUState *cpu) {
     load_states(cpu, memfile, cpufile);
+    // Flush && Reset log state - sometimes we reached here because of tb_exit > TB_EXIT_IDX1
+    qemu_loglevel = 0;
+    log_compact = 0;
+    num_blocks = 0;
+    irq_rounds = 0;
 }
 
 extern bool panda_exit_loop;
@@ -302,12 +309,32 @@ static bool before_block_exec_invalidate_opt(CPUState *cpu, TranslationBlock *tb
         panda_exit_loop = true;
         printf("Truncate Trace (max block number exceeded)\n");
         qemu_loglevel = 0;
+        log_compact = 0;
         num_blocks = 0;
         irq_rounds = 0;
         return true;
     }
     return false;
 }
+
+#ifdef TARGET_ARM
+static target_ulong vbar_addr(CPUState *cs) {
+    CPUArchState *env = (CPUArchState *)cs->env_ptr;
+    target_ulong addr = 0;
+    if (A32_BANKED_CURRENT_REG_GET(env, sctlr) & SCTLR_V) {
+        /* High vectors. When enabled, base address cannot be remapped. */
+        addr += 0xffff0000;
+    } else {
+        /* ARM v7 architectures provide a vector base address register to remap
+         * the interrupt vector table.
+         * This register is only followed in non-monitor mode, and is banked.
+         * Note: only bits 31:5 are valid.
+         */
+        addr += A32_BANKED_CURRENT_REG_GET(env, vbar);
+    }
+    return addr;
+}
+#endif
 
 static int before_block_exec(CPUState *env, TranslationBlock *tb) {
 #ifdef TARGET_ARM
@@ -316,7 +343,7 @@ static int before_block_exec(CPUState *env, TranslationBlock *tb) {
     CPUArchState *cpu = (CPUArchState *)env->env_ptr;
     uint32_t cpu_mode = cpu->uncached_cpsr & CPSR_M;
 
-    if (compact_output && num_blocks < MAX_BLOCKS)
+    if (compact_output && log_compact && num_blocks < MAX_BLOCKS)
         trace_seq.emplace_back(cpu->regs[15]);
 
     switch (cpu_mode) {
@@ -327,24 +354,32 @@ static int before_block_exec(CPUState *env, TranslationBlock *tb) {
         // ignore the very initial exectution
         if (!prev_cpu_mode) break;
         // cpu_mode changed to FIQ/IRQ/SVC indicates entering interrupt handling
-        if (cpu_mode^prev_cpu_mode || cpu->regs[15] == 0xffff0018/*IRQ_ENTRY*/) {
+        if (cpu_mode^prev_cpu_mode || cpu->regs[15] == vbar_addr(env)+0x18/*IRQ_ENTRY*/) {
             //fprintf(stderr, "DEBUG [%x](%d) cpsr %x, prev %x\n", cpu->regs[15], env->cpu_index, cpsr_read(cpu), prev_cpu_mode);
-            if (!compact_output)
+            if (!compact_output) {
                 qemu_log_flush();
 
-            // log io vals
-            if (!compact_output && !ioseq.empty() \
-                    && trace_count != trace_start) {    // ignores any io before actually started logging traces
-                char *iolog = g_strdup_printf("%s/iovals_%ld.log", tracedir, trace_count-1);
-                std::ofstream os(iolog, std::ofstream::out);
-                for (gchar *v : ioseq) {
-                    os << v;
-                    g_free(v);
+                // log io vals
+                if (!ioseq.empty() && trace_count != trace_start) { // ignores any io before actually started logging traces
+                    char *iolog = g_strdup_printf("%s/iovals_%ld.log", tracedir, trace_count-1);
+                    std::ofstream os(iolog, std::ofstream::out);
+                    for (gchar *v : ioseq) {
+                        os << v;
+                        g_free(v);
+                    }
+                    os.close();
+                    g_free(iolog);
                 }
-                os.close();
-                g_free(iolog);
+                ioseq.clear();
+            } else {
+                if (trace_seq_log) {
+                    FILE *f = fopen(trace_seq_log, "wb");
+                    fwrite(trace_seq.data(), sizeof(target_ulong), trace_seq.size(), f);
+                    fclose(f);
+                    g_free(trace_seq_log);
+                    trace_seq_log = nullptr;
+                }
             }
-            ioseq.clear();
 
 
             // check exit
@@ -391,12 +426,7 @@ static int before_block_exec(CPUState *env, TranslationBlock *tb) {
                 qemu_log("cpu mode: %x, prev: %x\n", cpu_mode, prev_cpu_mode);
                 qemu_log("Trace [0: %08x] cpsr %x, prev %x\n", cpu->regs[15], cpsr_read(cpu), prev_cpu_mode);
             } else {
-                if (trace_seq_log) {
-                    FILE *f = fopen(trace_seq_log, "wb");
-                    fwrite(trace_seq.data(), sizeof(target_ulong), trace_seq.size(), f);
-                    fclose(f);
-                    g_free(trace_seq_log);
-                }
+                log_compact = 1;
                 trace_seq_log = g_strdup_printf("%s/trace_%lld.pact", tracedir, trace_count);
                 trace_seq.clear();
                 trace_seq.emplace_back(cpu_mode);
