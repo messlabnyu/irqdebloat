@@ -93,4 +93,4 @@ for name in ordered_modes:
     val = regs.get(name, 0)
     print(' '*4 + '- ' + f"{val:#010x}")
 
-print(f"tpidrprw: {regs['privileged_only_thread_and_process_id_0']:#010x}")
+print(f"cp15.tpidrprw_s: {regs['privileged_only_thread_and_process_id_0']:#010x}")

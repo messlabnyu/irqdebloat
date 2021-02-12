@@ -69,4 +69,4 @@ banked_r14:
     - 0x2810e7cb
     - 0x00000000
     - 0x00000070
-tpidrprw: 0xc4b7bb40
+cp15.tpidrprw_s: 0xc4b7bb40
