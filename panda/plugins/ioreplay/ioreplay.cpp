@@ -52,7 +52,10 @@ static int start_new_irq = HWIRQ_FUZZ_TRY;
 static int irq_rounds = 0;
 static uint64_t replay_line = 0, replay_index = 0;
 static std::vector<std::vector<uint64_t>> replay_ioseqs;
+static char *trace_seq_log = nullptr;
+static std::vector<target_ulong> trace_seq;
 
+bool compact_output = false;
 bool init_calibrate = false;
 bool auto_enum = false;
 bool nosvc = false;
@@ -295,7 +298,7 @@ static bool before_block_exec_invalidate_opt(CPUState *cpu, TranslationBlock *tb
     num_blocks++;
     //CPUArchState *c = (CPUArchState *)cpu->env_ptr;
     //fprintf(stderr, "DEBUG bb exec %x[%lld:%x]\n", c->regs[15], num_blocks, c->uncached_cpsr&CPSR_M);
-    if (limit_trace && qemu_loglevel && num_blocks > MAX_BLOCKS) {
+    if (limit_trace && (qemu_loglevel || !trace_seq.empty()) && num_blocks > MAX_BLOCKS) {
         panda_exit_loop = true;
         printf("Truncate Trace (max block number exceeded)\n");
         qemu_loglevel = 0;
@@ -312,6 +315,10 @@ static int before_block_exec(CPUState *env, TranslationBlock *tb) {
     // https://developer.arm.com/documentation/ddi0301/h/programmer-s-model/exceptions/exception-vectors
     CPUArchState *cpu = (CPUArchState *)env->env_ptr;
     uint32_t cpu_mode = cpu->uncached_cpsr & CPSR_M;
+
+    if (compact_output && num_blocks < MAX_BLOCKS)
+        trace_seq.emplace_back(cpu->regs[15]);
+
     switch (cpu_mode) {
     case ARM_CPU_MODE_FIQ:
     case ARM_CPU_MODE_IRQ:
@@ -321,11 +328,13 @@ static int before_block_exec(CPUState *env, TranslationBlock *tb) {
         if (!prev_cpu_mode) break;
         // cpu_mode changed to FIQ/IRQ/SVC indicates entering interrupt handling
         if (cpu_mode^prev_cpu_mode || cpu->regs[15] == 0xffff0018/*IRQ_ENTRY*/) {
-            fprintf(stderr, "DEBUG [%x] cpsr %x, prev %x\n", cpu->regs[15], cpsr_read(cpu), prev_cpu_mode);
-            qemu_log_flush();
+            //fprintf(stderr, "DEBUG [%x](%d) cpsr %x, prev %x\n", cpu->regs[15], env->cpu_index, cpsr_read(cpu), prev_cpu_mode);
+            if (!compact_output)
+                qemu_log_flush();
 
             // log io vals
-            if (!ioseq.empty() && trace_count != trace_start) {    // ignores any io before actually started logging traces
+            if (!compact_output && !ioseq.empty() \
+                    && trace_count != trace_start) {    // ignores any io before actually started logging traces
                 char *iolog = g_strdup_printf("%s/iovals_%ld.log", tracedir, trace_count-1);
                 std::ofstream os(iolog, std::ofstream::out);
                 for (gchar *v : ioseq) {
@@ -374,12 +383,26 @@ static int before_block_exec(CPUState *env, TranslationBlock *tb) {
                 }
             }
 
-            //qemu_loglevel |= CPU_LOG_TB_IN_ASM|CPU_LOG_INT|CPU_LOG_TB_CPU;
-            qemu_loglevel |= CPU_LOG_EXEC|CPU_LOG_TB_NOCHAIN;
-            char *newlog = g_strdup_printf("%s/trace_%lld.log", tracedir, trace_count);
-            qemu_set_log_filename(newlog, nullptr);
-            qemu_log("cpu mode: %x, prev: %x\n", cpu_mode, prev_cpu_mode);
-            qemu_log("Trace [0: %08x] cpsr %x, prev %x\n", cpu->regs[15], cpsr_read(cpu), prev_cpu_mode);
+            if (!compact_output) {
+                //qemu_loglevel |= CPU_LOG_TB_IN_ASM|CPU_LOG_INT|CPU_LOG_TB_CPU;
+                qemu_loglevel |= CPU_LOG_EXEC|CPU_LOG_TB_NOCHAIN;
+                char *newlog = g_strdup_printf("%s/trace_%lld.log", tracedir, trace_count);
+                qemu_set_log_filename(newlog, nullptr);
+                qemu_log("cpu mode: %x, prev: %x\n", cpu_mode, prev_cpu_mode);
+                qemu_log("Trace [0: %08x] cpsr %x, prev %x\n", cpu->regs[15], cpsr_read(cpu), prev_cpu_mode);
+            } else {
+                if (trace_seq_log) {
+                    FILE *f = fopen(trace_seq_log, "wb");
+                    fwrite(trace_seq.data(), sizeof(target_ulong), trace_seq.size(), f);
+                    fclose(f);
+                    g_free(trace_seq_log);
+                }
+                trace_seq_log = g_strdup_printf("%s/trace_%lld.pact", tracedir, trace_count);
+                trace_seq.clear();
+                trace_seq.emplace_back(cpu_mode);
+                trace_seq.emplace_back(prev_cpu_mode);
+                trace_seq.emplace_back(cpu->regs[15]);
+            }
 
             trace_count++;
             num_blocks = 0;
@@ -499,6 +522,7 @@ bool init_plugin(void *self) {
     prepare_hwirq(l3_nums, args, "l3", enum_l3);
     prepare_hwirq(l4_nums, args, "l4", enum_l4);
     init_calibrate = panda_parse_bool(args, "calib");
+    compact_output = panda_parse_bool(args, "pack");
     // No auto blacklist for first and last layer
     if (panda_parse_bool(args, "blacklist")) {
         if (enum_l4)
