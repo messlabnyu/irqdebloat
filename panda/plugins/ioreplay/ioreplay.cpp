@@ -56,6 +56,7 @@ static char *trace_seq_log = nullptr;
 static std::vector<target_ulong> trace_seq;
 static bool log_compact = 0;
 
+bool quickdedup = false;
 bool compact_output = false;
 bool init_calibrate = false;
 bool auto_enum = false;
@@ -343,8 +344,10 @@ static int before_block_exec(CPUState *env, TranslationBlock *tb) {
     CPUArchState *cpu = (CPUArchState *)env->env_ptr;
     uint32_t cpu_mode = cpu->uncached_cpsr & CPSR_M;
 
-    if (compact_output && log_compact && num_blocks < MAX_BLOCKS)
-        trace_seq.emplace_back(cpu->regs[15]);
+    if (compact_output && log_compact && num_blocks < MAX_BLOCKS) {
+        if (!quickdedup || cpu->regs[15]!=trace_seq.back())
+            trace_seq.emplace_back(cpu->regs[15]);
+    }
 
     switch (cpu_mode) {
     case ARM_CPU_MODE_FIQ:
@@ -373,9 +376,13 @@ static int before_block_exec(CPUState *env, TranslationBlock *tb) {
                 ioseq.clear();
             } else {
                 if (trace_seq_log) {
-                    FILE *f = fopen(trace_seq_log, "wb");
-                    fwrite(trace_seq.data(), sizeof(target_ulong), trace_seq.size(), f);
-                    fclose(f);
+                    if (!quickdedup \
+                            || (nosvc && trace_seq[0]==ARM_CPU_MODE_IRQ) \
+                            || (!nosvc && trace_seq[1]==ARM_CPU_MODE_IRQ && trace_seq[0]==ARM_CPU_MODE_SVC)) {
+                        FILE *f = fopen(trace_seq_log, "wb");
+                        fwrite(trace_seq.data(), sizeof(target_ulong), trace_seq.size(), f);
+                        fclose(f);
+                    }
                     g_free(trace_seq_log);
                     trace_seq_log = nullptr;
                 }
@@ -563,6 +570,7 @@ bool init_plugin(void *self) {
     const char *_replay_log = panda_parse_string(args, "replay", "");
     if (_replay_log[0])
         load_replay_log(_replay_log);
+    quickdedup = panda_parse_bool(args, "dedup");
 
     panda_cb pcb = { .unassigned_io_read = ioread };
     panda_register_callback(self, PANDA_CB_UNASSIGNED_IO_READ, pcb);
