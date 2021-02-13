@@ -1,38 +1,70 @@
+set logging file regs.yaml
+set logging on
 set $env = (struct CPUARMState *)cpus->tqh_first->env_ptr
 set print repeats unlimited
+set pagination off
 printf "regs:\n"
-p/x $env->regs
-printf "daif:\n"
-p/x $env->daif
-printf "cp15.scr_el3:\n"
-p/x $env->cp15.scr_el3
-printf "cp15.hcr_el2:\n"
-p/x $env->cp15.hcr_el2
-printf "cp15.dacr_ns:\n"
-p/x $env->cp15.dacr_ns
-printf "cp15.dacr_s:\n"
-p/x $env->cp15.dacr_s
+set $i = 0
+set $len = sizeof($env->regs)/sizeof($env->regs[0])
+while $i < $len
+printf "    - %#x\n", $env->regs[$i++]
+end
+printf "daif: %#x\n", $env->daif
+printf "cp15.scr_el3: %#x\n", $env->cp15.scr_el3
+printf "cp15.hcr_el2: %#x\n", $env->cp15.hcr_el2
+printf "cp15.dacr_ns: %#x\n", $env->cp15.dacr_ns
+printf "cp15.dacr_s: %#x\n", $env->cp15.dacr_s
 printf "cp15.ttbr0_el:\n"
-p/x $env->cp15.ttbr0_el
+set $i = 0
+set $len = sizeof($env->cp15.ttbr0_el)/sizeof($env->cp15.ttbr0_el[0])
+while $i < $len
+printf "    - %#x\n", $env->cp15.ttbr0_el[$i++]
+end
 printf "cp15.ttbr1_el:\n"
-p/x $env->cp15.ttbr1_el
+set $i = 0
+set $len = sizeof($env->cp15.ttbr1_el)/sizeof($env->cp15.ttbr1_el[0])
+while $i < $len
+printf "    - %#x\n", $env->cp15.ttbr1_el[$i++]
+end
 printf "cp15.sctlr_el:\n"
-p/x $env->cp15.sctlr_el
+set $i = 0
+set $len = sizeof($env->cp15.sctlr_el)/sizeof($env->cp15.sctlr_el[0])
+while $i < $len
+printf "    - %#x\n", $env->cp15.sctlr_el[$i++]
+end
 printf "cp15.vbar_el:\n"
-p/x $env->cp15.vbar_el
-printf "cp15.tpidrprw_s:\n"
-p/x $env->cp15.tpidrprw_s
-printf "cp15.cpacr_el1:\n"
-p/x $env->cp15.cpacr_el1
-printf "uncached_cpsr:\n"
-p/x $env->uncached_cpsr
-printf "features:\n"
-p/x $env->features
-printf "spsr:\n"
-p/x $env->spsr
+set $i = 0
+set $len = sizeof($env->cp15.vbar_el)/sizeof($env->cp15.vbar_el[0])
+while $i < $len
+printf "    - %#x\n", $env->cp15.vbar_el[$i++]
+end
+printf "cp15.tpidr_el:\n"
+set $i = 0
+set $len = sizeof($env->cp15.tpidr_el)/sizeof($env->cp15.tpidr_el[0])
+while $i < $len
+printf "    - %#x\n", $env->cp15.tpidr_el[$i++]
+end
+printf "cp15.tpidrprw_s: %#x\n", $env->cp15.tpidrprw_s
+printf "cp15.cpacr_el1: %#x\n", $env->cp15.cpacr_el1
+printf "uncached_cpsr: %#x\n", $env->uncached_cpsr
+printf "features: %#x\n", $env->features
+printf "spsr: %#x\n", $env->spsr
 printf "banked_spsr:\n"
-p/x $env->banked_spsr
+set $i = 0
+set $len = sizeof($env->banked_spsr)/sizeof($env->banked_spsr[0])
+while $i < $len
+printf "    - %#x\n", $env->banked_spsr[$i++]
+end
 printf "banked_r13:\n"
-p/x $env->banked_r13
+set $i = 0
+set $len = sizeof($env->banked_r13)/sizeof($env->banked_r13[0])
+while $i < $len
+printf "    - %#x\n", $env->banked_r13[$i++]
+end
 printf "banked_r14:\n"
-p/x $env->banked_r14
+set $i = 0
+set $len = sizeof($env->banked_r14)/sizeof($env->banked_r14[0])
+while $i < $len
+printf "    - %#x\n", $env->banked_r14[$i++]
+end
+set logging off
