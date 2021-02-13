@@ -107,8 +107,8 @@ bool fiq = false;
 #define CPU_INTERRUPT_FIQ 0
 #endif
 
-#define MAX_BLOCKS_SINCE_NEW_COV 10000
-#define MAX_BLOCKS               100000
+#define MAX_BLOCKS_SINCE_NEW_COV 100000
+#define MAX_BLOCKS               1000000
 int num_blocks_since_new_cov = 0;
 int num_blocks_total = 0;
 
@@ -459,12 +459,21 @@ static int before_block_exec(CPUState *env, TranslationBlock *tb) {
             report_coverage(comm_socket);
             _Exit(0);
         }
-#endif
+
         // This is a bit of a hack around the fact that we don't have a real
         // model of the interrupt controller. In a real system something would
         // ACK the IRQ, but this will never happen here. So instead we just
-        // ACK after a few basic blocks.
-        if (num_blocks_total > 5) env->interrupt_request = 0;
+        // ACK a few basic blocks after seeing the start of IRQ handling
+        static int blocks_after_irq = -1;
+        if (tb->pc == vbase+0x18) blocks_after_irq = 0;
+        if (blocks_after_irq != -1) {
+            if (blocks_after_irq < 10) blocks_after_irq++;
+            else {
+                env->interrupt_request = 0;
+                blocks_after_irq = -1;
+            }
+        }
+#endif
     }
     else {
         dbgprintf("Hello, I'm the parent and I'll be running the show today. My PID is %d\n", getpid());
@@ -589,10 +598,24 @@ static void iowrite(CPUState *env, target_ulong pc, hwaddr addr, uint32_t size, 
     trace.push_back(make_io_wlog(pc,addr,*val));
 }
 
+bool use_consistent_io = false;
+std::map<hwaddr,uint64_t> cached_ioreads;
+
 static void ioread(CPUState *env, target_ulong pc, hwaddr addr, uint32_t size, uint64_t *val) {
     static int cur_ioval = 0;
     static int fd = -1;
     uint64_t fuzz = 0;
+
+    // In "consistency" mode, cache previously returned values for reads
+    // and return those instead of picking new ones
+    if (use_consistent_io &&
+            cached_ioreads.find(addr) != cached_ioreads.end()) {
+        fuzz = cached_ioreads[addr];
+        trace.push_back(make_io_rlog(pc,addr,fuzz));
+        *val = fuzz;
+        return;
+    }
+
     if (fd == -1) fd = open("/dev/urandom", O_RDONLY);
     if (cur_ioval >= num_iovals) {
         // Randomly do either (1 << i) or a true random value
@@ -618,6 +641,9 @@ static void ioread(CPUState *env, target_ulong pc, hwaddr addr, uint32_t size, u
     ioaddrs.insert(addr);
     *val = fuzz;
     trace.push_back(make_io_rlog(pc,addr,fuzz));
+    if (use_consistent_io) {
+        cached_ioreads[addr] = fuzz;
+    }
 }
 
 void after_machine_init(CPUState *env) {
@@ -634,6 +660,7 @@ bool init_plugin(void *self) {
     outdir = panda_parse_string(args, "dir", "irqfuzz");
     nr_cpu = panda_parse_uint32(args, "nproc", 16);
     fiq = panda_parse_bool(args, "fiq");
+    use_consistent_io = panda_parse_bool(args, "consistent_io");
     mkdir(outdir, 0755);
 
     panda_cb pcb = { .unassigned_io_read = ioread };

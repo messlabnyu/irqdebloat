@@ -102,6 +102,15 @@ void load_states(CPUState *env, const char *memfile, const char *cpufile) {
     }
     printf("}\n");
 
+    if (cpuregs["cp15.tpidr_el"]) {
+        printf("TPIDR_EL[] = {");
+        for (int i = 0; i < 4; i++){
+            printf("%#x ", cpuregs["cp15.tpidr_el"][i].as<uint32_t>());
+            envp->cp15.tpidr_el[i] = cpuregs["cp15.tpidr_el"][i].as<uint32_t>();
+        }
+        printf("}\n");
+    }
+
     printf("banked_spsr[] = { ");
     for (int i = 0; i < 8; i++){
         printf("%#x ", cpuregs["banked_spsr"][i].as<uint32_t>());
