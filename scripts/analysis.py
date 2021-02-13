@@ -3,6 +3,7 @@ import re
 import sys
 import json
 import time
+import struct
 import hashlib
 import itertools
 import multiprocessing
@@ -40,6 +41,23 @@ def check_status(line, mode='linux'):
     else:   # RiscOS
         return cur_mode == ARM_CPU_MODE_IRQ
 
+def parse_compact_trace(tracefile, tag, tracelimit=True):
+    trace = []
+    with open(tracefile, 'rb') as fd:
+        data = fd.read()
+    for i in range(8, len(data), 4):
+        addr = struct.unpack('<I', data[i:i+4])[0]
+        if tag == "freebsd" and addr == 0xc069bd84:
+            break
+        # skip exception vector stub
+        if addr&0xffff0000 == 0xffff0000:
+            continue
+        trace.append(addr)
+
+        if tracelimit and len(trace) > 20000:
+            break
+    return trace
+
 def parse_trace(tracefile, tag, dedup=True, tracelimit=True):
     with open(tracefile, 'r') as fd:
         data = fd.read().strip()
@@ -54,8 +72,8 @@ def parse_trace(tracefile, tag, dedup=True, tracelimit=True):
         # FreeBSD irq hack: truncate at the end of first intc dispatch loop
         if tag == "freebsd" and addr == 0xc069bd84:
             break
-        if tag == "linux" and addr == 0x8051da68:
-            break
+        #if tag == "linux" and addr == 0x8051da68:
+        #    break
         # skip exception vector stub
         if addr&0xffff0000 == 0xffff0000:
             continue
@@ -123,15 +141,19 @@ def preproc_traces(trdirs):
                 if tr.endswith(".pre"):
                     continue
                 trpath = os.path.join(curdir, tr)
-                with open(trpath, 'r') as fd:
-                    if not check_status(fd.readline(), ostag):
-                        continue
-                    # normalize qemu trace log
-                    normtr = re.sub("Trace 0x[0-9a-f]*", "Trace ", fd.read())
-                    # skip invalid traces
-                    if "Stopped execution of TB chain" in normtr:
-                        continue
-                    tag = hashlib.sha1(normtr).hexdigest()
+                if tr.endswith(".pact"):
+                    with open(trpath, 'rb') as fd:
+                        normtr = fd.read()
+                else:
+                    with open(trpath, 'r') as fd:
+                        if not check_status(fd.readline(), ostag):
+                            continue
+                        # normalize qemu trace log
+                        normtr = re.sub("Trace 0x[0-9a-f]*", "Trace ", fd.read())
+                        # skip invalid traces
+                        if "Stopped execution of TB chain" in normtr:
+                            continue
+                tag = hashlib.sha1(normtr).hexdigest()
                 if tag in trace_buckets:
                     trace_buckets[tag].update(trpath)
                 else:
@@ -151,7 +173,10 @@ def preproc_traces(trdirs):
 
     traces = []
     for tf in tracefiles:
-        traces.append({'dir': tf, 'full_trace': parse_trace(tf, ostag)})
+        if tf.endswith(".pact"):
+            traces.append({'dir': tf, 'full_trace': parse_compact_trace(tf, ostag)})
+        else:
+            traces.append({'dir': tf, 'full_trace': parse_trace(tf, ostag)})
     return traces
 
 def debugdiff():
