@@ -229,6 +229,8 @@ static void ioread(CPUState *env, target_ulong pc, hwaddr addr, uint32_t size, u
 }
 
 void check_replay_status() {
+    if (init_calibrate && irq_rounds <= TIMER_IRQ_ROUNDS)
+        return;
     if (!replay_ioseqs.empty()) {
         replay_line++;
         replay_index = 0;
