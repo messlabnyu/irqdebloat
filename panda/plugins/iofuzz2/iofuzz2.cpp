@@ -35,7 +35,7 @@ void qemu_system_shutdown_request(void);
 #include <deque>
 #include <map>
 
-#define MAX_GENERATIONS 10
+#define MAX_GENERATIONS 5
 
 /* Returns an integer in the range [0, n).
  *
@@ -122,7 +122,8 @@ enum exit_reason {
     REASON_TIMEOUT,
     REASON_MAXBLOCKS,
     REASON_ABORT,
-    REASON_NOCOV
+    REASON_NOCOV,
+    REASON_STALL
 };
 
 enum entry_kind {
@@ -149,8 +150,8 @@ trace_entry make_io_wlog(uint32_t pc, uint32_t addr, uint32_t val) {
     return t;
 }
 
-trace_entry make_block_log(uint32_t pc) {
-    trace_entry t = {ENTRY_BLOCK, pc, 0, 0};
+trace_entry make_block_log(uint32_t pc, uint32_t size) {
+    trace_entry t = {ENTRY_BLOCK, pc, 0, size};
     return t;
 }
 
@@ -412,10 +413,20 @@ void seq2iovals(std::vector<uint64_t> &seq) {
     for (size_t i = 0; i < seq.size(); i++) iovals[i] = seq[i];
 }
 
+#ifdef TARGET_ARM
+#define WFI_ENCODING 0xe320f003
+static bool block_has_wfi(CPUState *env, TranslationBlock *tb) {
+    uint32_t last_insn;  
+    panda_virtual_memory_read(env, tb->pc + tb->size - 4, (uint8_t *)&last_insn, 4);
+    return last_insn == WFI_ENCODING;
+}
+#endif
+
 target_ulong prev = -1;
 static int before_block_exec(CPUState *env, TranslationBlock *tb) {
     if (child) {
         num_blocks_total++;
+        dbgprintf("[%d] block %d " TARGET_FMT_lx "\n", getpid(), num_blocks_total, tb->pc);
         // We're in the child, and it's a normal basic block.
         // Update coverage
         if (prev != -1) {
@@ -425,7 +436,7 @@ static int before_block_exec(CPUState *env, TranslationBlock *tb) {
             else
                 num_blocks_since_new_cov = 0;
             edges[edge]++;
-            trace.push_back(make_block_log(tb->pc));
+            trace.push_back(make_block_log(tb->pc, tb->size));
         }
         prev = tb->pc;
         // Termination conditions: timeout or went too long without seeing
@@ -473,6 +484,15 @@ static int before_block_exec(CPUState *env, TranslationBlock *tb) {
                 blocks_after_irq = -1;
             }
         }
+        
+        // WFI will cause a stall. Detect it and abort the trace.
+        if (block_has_wfi(env,tb)) {
+            dbgprintf("Done with fuzz (wfi), cya\n");
+            trace.push_back(make_exit_log(REASON_STALL));
+            report_coverage(comm_socket);
+            _Exit(0);
+        }
+
 #endif
     }
     else {
@@ -599,6 +619,7 @@ static void iowrite(CPUState *env, target_ulong pc, hwaddr addr, uint32_t size, 
 }
 
 bool use_consistent_io = false;
+double consistent_io_prob = 0.0;
 std::map<hwaddr,uint64_t> cached_ioreads;
 
 static void ioread(CPUState *env, target_ulong pc, hwaddr addr, uint32_t size, uint64_t *val) {
@@ -609,7 +630,8 @@ static void ioread(CPUState *env, target_ulong pc, hwaddr addr, uint32_t size, u
     // In "consistency" mode, cache previously returned values for reads
     // and return those instead of picking new ones
     if (use_consistent_io &&
-            cached_ioreads.find(addr) != cached_ioreads.end()) {
+            cached_ioreads.find(addr) != cached_ioreads.end() &&
+            randint(100) < consistent_io_prob*100) {
         fuzz = cached_ioreads[addr];
         trace.push_back(make_io_rlog(pc,addr,fuzz));
         *val = fuzz;
@@ -660,7 +682,9 @@ bool init_plugin(void *self) {
     outdir = panda_parse_string(args, "dir", "irqfuzz");
     nr_cpu = panda_parse_uint32(args, "nproc", 16);
     fiq = panda_parse_bool(args, "fiq");
-    use_consistent_io = panda_parse_bool(args, "consistent_io");
+    consistent_io_prob = panda_parse_double(args, "consistent_io_prob", 0.0);
+    use_consistent_io = consistent_io_prob > 0.0;
+
     mkdir(outdir, 0755);
 
     panda_cb pcb = { .unassigned_io_read = ioread };
