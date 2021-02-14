@@ -55,6 +55,7 @@ static std::vector<std::vector<uint64_t>> replay_ioseqs;
 static char *trace_seq_log = nullptr;
 static std::vector<target_ulong> trace_seq;
 static bool log_compact = 0;
+static std::set<target_ulong> timer_io;
 
 bool quickdedup = false;
 bool compact_output = false;
@@ -126,6 +127,14 @@ static void ioread(CPUState *env, target_ulong pc, hwaddr addr, uint32_t size, u
         return;
     }
 #endif
+    // Feed arbitrary number to Timer IO to avoid dead loop
+    if (!timer_io.empty()) {
+        if (timer_io.find(addr) != timer_io.end()) {
+            //assert(read(fd, val, sizeof(*val)) > 0);
+            *val = 0xffffffff;
+            return;
+        }
+    }
     // Replay from ioseq log
     if (!replay_ioseqs.empty()) {
         if (replay_index < replay_ioseqs[replay_line].size())
@@ -510,6 +519,15 @@ static void prepare_hwirq(std::deque<uint64_t> &preirq, panda_arg_list *args, co
     }
 }
 
+// Assumed timer MMIO address list, one hex number per line
+static void load_timer_io(const char *log) {
+    std::string line;
+    std::ifstream fs(log);
+    while (std::getline(fs, line)) {
+        timer_io.emplace(strtoul(line.c_str(), NULL, 16));
+    }
+}
+
 // Replay log are formatted with one sequence of iovals per line, each ioval is in hex, comma seperated
 static void load_replay_log(const char *log) {
     std::string line, s;
@@ -573,6 +591,9 @@ bool init_plugin(void *self) {
     if (_replay_log[0])
         load_replay_log(_replay_log);
     quickdedup = panda_parse_bool(args, "dedup");
+    const char *_timer_io_list = panda_parse_string(args, "iolist", "");
+    if (_timer_io_list[0])
+        load_timer_io(_timer_io_list);
 
     panda_cb pcb = { .unassigned_io_read = ioread };
     panda_register_callback(self, PANDA_CB_UNASSIGNED_IO_READ, pcb);
