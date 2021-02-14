@@ -41,6 +41,10 @@ elif ostag == "beagle":
     bp = [0xc07aead0, 0xc07eb014, 0xc07ec9bc, 0xc0a9ac70, 0xc0b14630, 0xc0838e98, 0xc08600ac, 0xc091c078, 0xc09a2b7c, 0xc09c48d0, 0xc09c484c, 0xc0a46dbc, 0xc07e93d4, 0xc0a84284, 0xc0ad0f48, 0xc0b13834, 0xc082e3cc, 0xbf0f96dc, 0xc0afa66c]
 elif ostag == "romulus":
     bp = [0x8058f92c, 0x8041d848, 0x804a0390, 0x8051da7c, 0x805466ec, 0x80530e68, 0x804453d0, 0x80510a70, 0x8040e5bc]
+elif ostag=="sabre":
+    bp=[0x8010f8f4, 0x8050aea8, 0x8050efac, 0x805119f0, 0x8051a168, 0x80541088, 0x8054527c, 0x8058d170, 0x806ff31c, 0x8070f284, 0x80715808, 0x807e9314, 0x8080cd94, 0x8085b414, 0x80894d54, 0x808c25a8, 0x808f7004, 0x80949f58, 0x8094b038, 0x8095e070, 0x80961b50, 0x809b186c, 0x809b97c8]
+elif ostag=="vxwork":
+    bp=[0x254400, 0x3806ec, 0x3dd474, 0x427fcc, 0x44bc48, 0x44ce80, 0x44eba4, 0x45046c, 0x5ba158, 0x60e360]
 
 pbp = [anal.mm.translate(v) - anal.mm.cpu._physical_mem_base for v in bp]
 
@@ -58,11 +62,11 @@ for dd in ddlist:
     for d,_,files in os.walk(dd):
         for fn in files:
             if fn.startswith("diverge_"):
-                pat = re.compile("diverge_([0-9]*)_([0-9]*).json")
+                pat = re.compile("diverge_([0-9a-f]*)_([0-9a-f]*).json")
                 x, y = pat.match(fn).groups()
                 with open(os.path.join(d, fn), 'r') as fd:
-                    ix = min(int(x), int(y)) + cnt*10000000
-                    iy = max(int(x), int(y)) + cnt*10000000
+                    ix = min(x, y)
+                    iy = max(x, y)
                     jd = json.load(fd)
                 if ix not in difflog:
                     difflog[ix] = {}

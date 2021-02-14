@@ -247,8 +247,8 @@ def diffhand_mc(tracepairs, out):
         if final_traces[tr_x][0][0] != final_traces[tr_y][0][0]:
             continue
 
-        idx = int(tr_x.split('_')[-1].split('.')[0])
-        idy = int(tr_y.split('_')[-1].split('.')[0])
+        idx = tr_x.split('_')[-1].split('.')[0]
+        idy = tr_y.split('_')[-1].split('.')[0]
         diverge, aligned, targets, _ = anal.diff(
                 out,
                 {'trace': final_traces[tr_x], 'id': idx},
@@ -256,7 +256,7 @@ def diffhand_mc(tracepairs, out):
         diverge_points.difference_update(diverge)
         branch_targets.update(targets)
 
-        with open(os.path.join(out, "diverge_{:d}_{:d}.json".format(idx, idy)), 'w') as fd:
+        with open(os.path.join(out, "diverge_{}_{}.json".format(idx, idy)), 'w') as fd:
             jout = {'diverge': [pt for pt in diverge_points], 'target': {}}
             for xl in branch_targets:
                 if xl[0] not in jout['target']:

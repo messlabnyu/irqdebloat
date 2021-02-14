@@ -206,7 +206,7 @@ class DiffSliceAnalyzer(object):
 
         # output the aligned pair of traces
         if outdir:
-            with open(os.path.join(outdir, "aligned_{:d}_{:d}.json".format(*trace_ids)), 'w') as fd:
+            with open(os.path.join(outdir, "aligned_{}_{}.json".format(*trace_ids)), 'w') as fd:
                 json.dump({'aligned': aligned, 'diverge': diverge}, fd)
         return (diverge, aligned, branch_targets, diverge_ei)
 
@@ -377,8 +377,8 @@ class DiffSliceAnalyzer(object):
             if final_traces[tr_x][0][0] != final_traces[tr_y][0][0]:
                 continue
 
-            idx = int(tr_x.split('_')[-1].split('.')[0])
-            idy = int(tr_y.split('_')[-1].split('.')[0])
+            idx = tr_x.split('_')[-1].split('.')[0]
+            idy = tr_y.split('_')[-1].split('.')[0]
             diverge, aligned, targets, _ = self.diff(
                     outdir,
                     {'trace': final_traces[tr_x], 'id': idx},
@@ -390,7 +390,7 @@ class DiffSliceAnalyzer(object):
             #patch_points = set([pt[1] for pt in branch_targets if pt[0] in diverge_points])
             #with open(os.path.join(outdir, "patch.json"), 'w') as fd:
             #    json.dump({'locations': [pt for pt in patch_points]}, fd)
-            with open(os.path.join(outdir, "diverge_{:d}_{:d}.json".format(idx, idy)), 'w') as fd:
+            with open(os.path.join(outdir, "diverge_{}_{}.json".format(idx, idy)), 'w') as fd:
                 jout = {'diverge': [pt for pt in diverge], 'target': {}}
                 for xl in branch_targets:
                     if xl[0] not in jout['target']:
