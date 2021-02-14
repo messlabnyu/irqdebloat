@@ -113,7 +113,8 @@ typedef enum {
 
 static inline void flush_icache_range(uintptr_t start, uintptr_t stop)
 {
-    __builtin___clear_cache((char *)start, (char *)stop);
+    //__builtin___clear_cache((char *)start, (char *)stop);
+    __clear_cache((char*)start, (char*)stop);
 }
 
 #endif /* AARCH64_TCG_TARGET_H */

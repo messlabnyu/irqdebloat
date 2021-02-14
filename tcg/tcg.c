@@ -3015,7 +3015,10 @@ static void tcg_register_jit_int(void *buf, size_t size,
 {
 }
 
+#if ELF_HOST_MACHINE == EM_AARCH64
+#else
 void tcg_register_jit(void *buf, size_t buf_size)
 {
 }
+#endif
 #endif /* ELF_HOST_MACHINE  */
