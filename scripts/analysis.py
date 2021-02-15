@@ -36,7 +36,7 @@ def check_status(line, mode='linux'):
     l = line.split()
     prev_mode = int(l[-1], 16)
     cur_mode = int(l[2][:-1], 16)
-    if mode in ['linux', 'freebsd', 'beagle', 'romulus']:
+    if mode in ['linux', 'freebsd', 'beagle', 'romulus', 'sabre', 'vxwork']:
         return (cur_mode == ARM_CPU_MODE_SVC and prev_mode == ARM_CPU_MODE_IRQ)
     else:   # RiscOS
         return cur_mode == ARM_CPU_MODE_IRQ
@@ -54,8 +54,8 @@ def parse_compact_trace(tracefile, tag, tracelimit=True):
             continue
         trace.append(addr)
 
-        if tracelimit and len(trace) > 20000:
-            break
+        #if tracelimit and len(trace) > 20000:
+        #    break
     return trace
 
 def parse_trace(tracefile, tag, dedup=True, tracelimit=True):
@@ -205,9 +205,9 @@ def diff():
     bv = anal.bn_init(kernelfile)
     anal.bn_analyze(bv, traces, outdir)
 
-def diff_rawmem():
+def diff_rawmem(membase=0):
     anal = DiffSliceAnalyzer()
-    bv = anal.rawmem_bn_init(regfile, memfile)
+    bv = anal.rawmem_bn_init(regfile, memfile, membase)
 
     traces = preproc_traces([tracedir])
     ## Truncate traces at user space address
@@ -228,9 +228,9 @@ def diff_rawmem():
 
     anal.bn_analyze(bv, traces, outdir)
 
-def anal_mc(reg, mem, tr, out):
+def anal_mc(reg, mem, tr, out, membase):
     anal = DiffSliceAnalyzer()
-    bv = anal.rawmem_bn_init(reg, mem)
+    bv = anal.rawmem_bn_init(reg, mem, membase)
     anal.bn_analyze(bv, tr, out, mcore=True)
 
 def diffhand_mc(tracepairs, out):
@@ -265,7 +265,7 @@ def diffhand_mc(tracepairs, out):
             json.dump(jout, fd)
 
 
-def diff_mc():
+def diff_mc(membase=0):
     tracewc = []
     for r,ds,_ in os.walk(tracedir):
         tracewc.extend([os.path.join(r,d) for d in ds])
@@ -286,7 +286,8 @@ def diff_mc():
         traces_list[i%NPROC].append({'dir': tr['dir'], 'full_trace': [t for t in tr['full_trace']]})
 
     # preprocess
-    pool = [multiprocessing.Process(target=anal_mc, args=(regfile, memfile, traces_list[i], outs[i])) for i in range(NPROC)]
+    pool = [multiprocessing.Process(target=anal_mc, args=(regfile, memfile, traces_list[i], outs[i], membase)) \
+            for i in range(NPROC)]
     map(lambda x: x.start(), pool)
     while True in map(lambda x: x.is_alive(), pool):
         time.sleep(60)
@@ -316,8 +317,18 @@ def diff_mc():
         time.sleep(60)
         print "Diff: ", map(lambda x: x.is_alive(), pool)
 
+def get_membase(tag):
+    if tag in ["beagle", "romulus"]:
+        return 0x80000000
+    if tag in ["sabre", "vxwork"]:
+        return 0x10000000
+    if tag == "nuri":
+        return 0x40000000
+    return 0
+
 if __name__ == "__main__":
     #debugdiff()
     #diff()
-    #diff_rawmem()
-    diff_mc()
+    membase = get_membase(ostag)
+    #diff_rawmem(membase)
+    diff_mc(membase)

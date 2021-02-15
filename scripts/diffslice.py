@@ -250,11 +250,11 @@ class DiffSliceAnalyzer(object):
         with open(self.outputFile("patch.json"), 'w') as fd:
             json.dump({'locations': [pt for pt in patch_points]}, fd)
 
-    def rawmem_bn_init(self, reg, mem):
+    def rawmem_bn_init(self, reg, mem, membase=0):
         bv = BinaryViewType['Raw'].open(mem)
         bv.store_metadata('ephemeral', {'binaryninja.analysis.max_function_size': 0})
         bv.platform = Architecture['armv7'].standalone_platform
-        self.mm = vm.VM(reg, mem)
+        self.mm = vm.VM(reg, mem, membase)
 
         #binaryninja.log.log_to_file(0, "log")
         #binaryninja.log.redirect_output_to_log()

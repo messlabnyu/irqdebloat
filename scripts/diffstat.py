@@ -17,7 +17,7 @@ DIFFOUT_DIR = sys.argv[4]
 from analysis import *
 
 anal = DiffSliceAnalyzer()
-bv = anal.rawmem_bn_init(regfile, memfile)
+bv = anal.rawmem_bn_init(regfile, memfile, get_membase(ostag))
 mmap = anal.mm.walk()
 
 def getva(pa):
