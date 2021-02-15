@@ -57,6 +57,7 @@ static std::vector<target_ulong> trace_seq;
 static bool log_compact = 0;
 static std::set<target_ulong> timer_io;
 
+bool clear_irq = false;
 bool quickdedup = false;
 bool compact_output = false;
 bool init_calibrate = false;
@@ -458,17 +459,30 @@ static int before_block_exec(CPUState *env, TranslationBlock *tb) {
             trace_count++;
             num_blocks = 0;
 
-            if (nosvc && cpu_mode == ARM_CPU_MODE_IRQ) {
-                track_dead_ioread();
-                check_replay_status();
-                start_new_irq = HWIRQ_FUZZ_TRY;
-                irq_rounds++;
-            }
-            if (!nosvc && cpu_mode == ARM_CPU_MODE_SVC && prev_cpu_mode == ARM_CPU_MODE_IRQ) {
-                track_dead_ioread();
-                check_replay_status();
-                start_new_irq = HWIRQ_FUZZ_TRY;
-                irq_rounds++;
+            if (nosvc) {
+                if (cpu_mode == ARM_CPU_MODE_IRQ) {
+                    track_dead_ioread();
+                    check_replay_status();
+                    start_new_irq = HWIRQ_FUZZ_TRY;
+                    irq_rounds++;
+                    if (clear_irq)
+                        env->interrupt_request = 0;
+                } else {
+                    if (clear_irq)
+                        env->interrupt_request = 1;
+                }
+            } else {
+                if (cpu_mode == ARM_CPU_MODE_SVC && prev_cpu_mode == ARM_CPU_MODE_IRQ) {
+                    track_dead_ioread();
+                    check_replay_status();
+                    start_new_irq = HWIRQ_FUZZ_TRY;
+                    irq_rounds++;
+                    if (clear_irq)
+                        env->interrupt_request = 0;
+                } else {
+                    if (clear_irq)
+                        env->interrupt_request = 1;
+                }
             }
         }
         break;
@@ -597,6 +611,7 @@ bool init_plugin(void *self) {
     const char *_timer_io_list = panda_parse_string(args, "iolist", "");
     if (_timer_io_list[0])
         load_timer_io(_timer_io_list);
+    clear_irq = panda_parse_bool(args, "clearirq");
 
     panda_cb pcb = { .unassigned_io_read = ioread };
     panda_register_callback(self, PANDA_CB_UNASSIGNED_IO_READ, pcb);
