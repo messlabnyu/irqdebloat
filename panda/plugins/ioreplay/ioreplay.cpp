@@ -130,8 +130,11 @@ static void ioread(CPUState *env, target_ulong pc, hwaddr addr, uint32_t size, u
     // Feed arbitrary number to Timer IO to avoid dead loop
     if (!timer_io.empty()) {
         if (timer_io.find(addr) != timer_io.end()) {
-            //assert(read(fd, val, sizeof(*val)) > 0);
-            *val = 0xffffffff;
+            assert(read(fd, val, sizeof(*val)) > 0);
+	    if ((*val)&1)
+                *val = 0xffffffff;
+	    else
+                *val = 0;
             return;
         }
     }
@@ -356,7 +359,7 @@ static int before_block_exec(CPUState *env, TranslationBlock *tb) {
     uint32_t cpu_mode = cpu->uncached_cpsr & CPSR_M;
 
     if (compact_output && log_compact && num_blocks < MAX_BLOCKS) {
-        if (!quickdedup || cpu->regs[15]!=trace_seq.back())
+        if (!quickdedup || trace_seq.empty() || cpu->regs[15]!=trace_seq.back())
             trace_seq.emplace_back(cpu->regs[15]);
     }
 
@@ -605,6 +608,8 @@ bool init_plugin(void *self) {
     panda_register_callback(self, PANDA_CB_BEFORE_BLOCK_EXEC_INVALIDATE_OPT, pcb);
     pcb.top_loop = top_loop;
     panda_register_callback(self, PANDA_CB_TOP_LOOP, pcb);
+
+    panda_disable_tb_chaining();
 
     start = time(NULL);
 
