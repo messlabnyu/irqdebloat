@@ -12,7 +12,7 @@
 
 #define RAM_LIMIT_GB    4
 
-enum {
+typedef enum {
     MEM = 0,
     NAND,
     NAND_CONTROLLER,
@@ -30,11 +30,12 @@ enum {
     DG_TIMER,
 
     MEM_REGION_COUNT,
-};
+} MEM_TYPE;
 
 typedef struct MemMapEntry {
     hwaddr base;
     hwaddr size;
+    MEM_TYPE type;
 } MemMapEntry;
 
 

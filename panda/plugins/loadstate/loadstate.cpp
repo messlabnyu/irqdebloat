@@ -22,10 +22,12 @@ extern "C" {
 
 #include "panda/plugin.h"
 #include "loadstate_int_fns.h"
+#include "hw/arm/rehosting.h"
 
 bool init_plugin(void *);
 void uninit_plugin(void *);
 
+extern GArray *rehosting_memmap;
 }
 
 // UGH this is only defined in exec.c (used via a typedef elsewhere)
@@ -38,6 +40,10 @@ struct CPUAddressSpace {
 };
 
 void load_states(CPUState *env, const char *memfile, const char *cpufile) {
+    load_states_multi(env, {memfile}, cpufile);
+}
+
+void load_states_multi(CPUState *env, std::vector<const char *>memfiles, const char *cpufile) {
 #ifdef TARGET_ARM
     YAML::Node cpuregs = YAML::LoadFile(cpufile);
     CPUArchState *envp = (CPUArchState *)env->env_ptr;
@@ -138,13 +144,21 @@ void load_states(CPUState *env, const char *memfile, const char *cpufile) {
         env->cpu_ases[0].memory_dispatch = env->cpu_ases[1].memory_dispatch;
 
     //LOAD MEM
+    for (int i = 0; i < memfiles.size(); i++) {
     FILE *fp_mem;
     unsigned char buf[0x1000];
-    fp_mem = fopen(memfile,"r");
+    fp_mem = fopen(memfiles[i],"r");
     assert(fp_mem);
+    hwaddr memstart = ram_start;
+    hwaddr memsize = ram_size;
+    if (rehosting_memmap && i < rehosting_memmap->len) {
+        MemMapEntry *ment = g_array_index(rehosting_memmap,MemMapEntry*,i);
+        memstart = ment->base;
+        memsize = ment->size;
+    }
     printf ("Loading RAM image at %" HWADDR_PRIx " size %" HWADDR_PRIx "\n",
-            ram_start, ram_size);
-    for (hwaddr a = ram_start; a < ram_start+ram_size; a += 0x1000) {
+            memstart, memsize);
+    for (hwaddr a = memstart; a < memstart+memsize; a += 0x1000) {
         int n = fread(buf,1,0x1000,fp_mem);
         if (-1 == n) exit(1);
 #if 0
@@ -158,6 +172,8 @@ void load_states(CPUState *env, const char *memfile, const char *cpufile) {
         }
 #endif
         panda_physical_memory_rw(a, (uint8_t *)buf, n, 1);
+    }
+    fclose(fp_mem);
     }
 #endif
 }

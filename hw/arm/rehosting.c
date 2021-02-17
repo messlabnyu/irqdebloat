@@ -68,6 +68,7 @@ do { fprintf(stderr, "rehosting_machine: " fmt "\n", ## __VA_ARGS__); } while (0
 
 
 static MemMapEntry memmap[MEM_REGION_COUNT];
+GArray *rehosting_memmap = NULL;
 
 // Allocate enough for both SPI and PPI IRQs
 static int irqmap[NUM_IRQS + (GIC_INTERNAL * REHOSTING_MAX_CPUS)];
@@ -84,6 +85,8 @@ static void parse_mem_map(char *map_str)
         error_report("No memory map specified!");
         return;
     }
+    if (!rehosting_memmap)
+        rehosting_memmap = g_array_new(false,false,sizeof(void*));
 
     // Format is "REGION_NAME 0xstart-0xend;..."
     char *pos = strtok(map_str, ";");
@@ -121,8 +124,18 @@ static void parse_mem_map(char *map_str)
             }
 
             DEBUG("Adding region: %s @ 0x%lx-0x%lx", name, start, end);
-            memmap[type].base = start;
-            memmap[type].size = (end - start);
+            if (!memmap[type].size) {
+                memmap[type].base = start;
+                memmap[type].size = (end - start);
+            }
+
+            if (type == MEM) {
+                MemMapEntry *ent = (MemMapEntry*)malloc(sizeof(MemMapEntry));
+                ent->base = start;
+                ent->size = end-start;
+                ent->type = type;
+                g_array_append_val(rehosting_memmap, ent);
+            }
         } else {
             error_report("Error parsing memory region definition '%s'", pos);
         }
@@ -231,6 +244,7 @@ static void mach_rehosting_init(MachineState *machine)
         create_gic(vbi, s, gic_version, false);
     }
 
+    /*
     vbi->bootinfo.ram_size = memmap[MEM].size;
     vbi->bootinfo.kernel_filename = machine->kernel_filename;
     vbi->bootinfo.kernel_cmdline = machine->kernel_cmdline;
@@ -243,6 +257,7 @@ static void mach_rehosting_init(MachineState *machine)
     vbi->bootinfo.firmware_loaded = firmware_loaded;
 
     arm_load_kernel(ARM_CPU(first_cpu), &vbi->bootinfo);
+    */
 }
 
 static void rehosting_machine_class_init(MachineClass *mc)
