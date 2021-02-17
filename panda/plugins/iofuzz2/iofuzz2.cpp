@@ -102,6 +102,7 @@ bool child = false;
 size_t execs = 0;
 uint32_t nr_cpu = 16;
 bool fiq = false;
+bool long_win = false;
 
 #ifndef TARGET_ARM
 #define CPU_INTERRUPT_FIQ 0
@@ -382,8 +383,8 @@ void genconst(std::vector<uint64_t> &prefix, std::deque<std::vector<uint64_t>> &
 }
 
 // Sliding windows of bits
-void genwin(std::vector<uint64_t> &prefix, std::deque<std::vector<uint64_t>> &out) {
-    for (int i = 1; i <= 4; i++) {
+void genwin(std::vector<uint64_t> &prefix, std::deque<std::vector<uint64_t>> &out, int mask=4) {
+    for (int i = 1; i <= mask; i++) {
         for (int j = 0; j < 32-i+1; j++) {
             out.push_back(prefix); out.back().push_back(((1L << i) - 1) << j);
         }
@@ -510,12 +511,22 @@ static int before_block_exec(CPUState *env, TranslationBlock *tb) {
             gen_start_time = time(NULL);
             // Generate seeds for this generation
             std::deque<std::vector<uint64_t>> new_seeds;
-            for (auto s : seeds) {
-                genconst(s, new_seeds);
-                genwin(s, new_seeds);
-                genrand(s, new_seeds);
-                genint(s, new_seeds);
-            }
+	    if (!long_win) {
+                for (auto s : seeds) {
+                    genconst(s, new_seeds);
+                    genwin(s, new_seeds);
+                    genrand(s, new_seeds);
+                    genint(s, new_seeds);
+                }
+	    } else {
+                genwin(seeds.back(), new_seeds, 1);
+		int end = new_seeds.size();
+                for (int i = 0; i < end; i++) {
+                for (int r = 0; r < 3; r++) {
+		    genwin(new_seeds[i], new_seeds, 1);
+                    new_seeds[i].push_back(0);
+                }}
+	    }
 
             for (int c = 0; c < nr_cpu; c++) {
                 seq2iovals(new_seeds.front()); new_seeds.pop_front();
@@ -684,6 +695,7 @@ bool init_plugin(void *self) {
     fiq = panda_parse_bool(args, "fiq");
     consistent_io_prob = panda_parse_double(args, "consistent_io_prob", 0.0);
     use_consistent_io = consistent_io_prob > 0.0;
+    long_win = panda_parse_bool(args, "wiiin");
 
     mkdir(outdir, 0755);
 
