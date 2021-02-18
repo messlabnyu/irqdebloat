@@ -686,7 +686,7 @@ void after_machine_init(CPUState *env) {
 static void parse_memfile_str(const char* memstr) {
     std::istringstream ss(memstr);
     std::string s;
-    while (std::getline(ss,s,';'))
+    while (std::getline(ss,s,'|'))
         memfile.emplace_back(strdup(s.c_str()));
 }
 

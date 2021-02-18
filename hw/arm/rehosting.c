@@ -234,11 +234,21 @@ static void mach_rehosting_init(MachineState *machine)
     machine->ram_size = vbi->memmap[MEM].size;
     ram_size = vbi->memmap[MEM].size;
     ram_start = vbi->memmap[MEM].base;
+    /*
     printf("RAM size: %#x\n", machine->ram_size);
     memory_region_allocate_system_memory(ram, OBJECT(machine), "ram",
                                          machine->ram_size);
-    printf("RAM base: %#x\n", vbi->memmap[MEM].base);
-    memory_region_add_subregion_overlap(sysmem, vbi->memmap[MEM].base, ram, 2);
+    printf("RAM base: %#x\n", ram_start);
+    memory_region_add_subregion_overlap(sysmem, ram_start, ram, 2);
+    */
+    for (int i = 0; i < rehosting_memmap->len; i++) {
+        MemMapEntry *ment = g_array_index(rehosting_memmap,MemMapEntry*,i);
+        char ramname[64] = {0};
+        snprintf(ramname, 64, "ram%d", i);
+        ment->mr = (MemoryRegion*)malloc(sizeof(MemoryRegion));
+        memory_region_init_ram(ment->mr, NULL, ramname, ment->size, &error_fatal);
+        memory_region_add_subregion(sysmem, ment->base, ment->mr);
+    }
     
     if (vbi->memmap[GIC_DIST].base && vbi->memmap[GIC_CPU].base) {
         create_gic(vbi, s, gic_version, false);

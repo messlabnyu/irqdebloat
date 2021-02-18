@@ -101,8 +101,8 @@ void load_states_multi(CPUState *env, const char **pmemfiles, int num, const cha
             printf("%#x ", cpuregs["cp15.tcr_el"][i].as<uint32_t>());
             uint64_t tcr = cpuregs["cp15.tcr_el"][i].as<uint32_t>();
             envp->cp15.tcr_el[i].raw_tcr = tcr;
-            envp->cp15.tcr_el[i].mask = (tcr&7) ? (((1<<(tcr&7))-1)<<(32-(tcr&7))) : 0;
-            envp->cp15.tcr_el[i].base_mask = ~((1<<(14-(tcr&7)))-1);
+            envp->cp15.tcr_el[i].mask = ~(((uint32_t)0xffffffffu) >> (tcr&7));
+            envp->cp15.tcr_el[i].base_mask = ~((uint32_t)0x3fffu >> (tcr&7));
         }
         printf("}\n");
     }

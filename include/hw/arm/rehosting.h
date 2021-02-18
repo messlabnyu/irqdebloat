@@ -36,6 +36,7 @@ typedef struct MemMapEntry {
     hwaddr base;
     hwaddr size;
     MEM_TYPE type;
+    MemoryRegion *mr;
 } MemMapEntry;
 
 
