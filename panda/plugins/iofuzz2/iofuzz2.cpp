@@ -90,7 +90,7 @@ std::map<edge_t,int> edges;
 std::set<target_ulong> ioaddrs;
 std::set<target_ulong> seen_bbs;
 
-const char *memfile;
+std::vector<const char *> memfile;
 const char *cpufile;
 const char *outdir;
 unsigned long fuzz_timeout;
@@ -680,14 +680,21 @@ static void ioread(CPUState *env, target_ulong pc, hwaddr addr, uint32_t size, u
 }
 
 void after_machine_init(CPUState *env) {
-    load_states(env, memfile, cpufile);
+    load_states_multi(env, memfile.data(), memfile.size(), cpufile);
+}
+
+static void parse_memfile_str(const char* memstr) {
+    std::istringstream ss(memstr);
+    std::string s;
+    while (std::getline(ss,s,';'))
+        memfile.emplace_back(strdup(s.c_str()));
 }
 
 bool init_plugin(void *self) {
     panda_require("loadstate");
     if (!init_loadstate_api()) return false;
     panda_arg_list *args = panda_get_args("iofuzz2");
-    memfile = panda_parse_string(args, "mem", "mem");
+    parse_memfile_str(panda_parse_string(args, "mem", "mem"));
     cpufile = panda_parse_string(args, "cpu", "cpu");
     fuzz_timeout = panda_parse_ulong(args, "timeout", 10);
     outdir = panda_parse_string(args, "dir", "irqfuzz");

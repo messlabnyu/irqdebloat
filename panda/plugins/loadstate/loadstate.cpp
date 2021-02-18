@@ -40,11 +40,12 @@ struct CPUAddressSpace {
 };
 
 void load_states(CPUState *env, const char *memfile, const char *cpufile) {
-    load_states_multi(env, {memfile}, cpufile);
+    load_states_multi(env, &memfile, 1, cpufile);
 }
 
-void load_states_multi(CPUState *env, std::vector<const char *>memfiles, const char *cpufile) {
+void load_states_multi(CPUState *env, const char **pmemfiles, int num, const char *cpufile) {
 #ifdef TARGET_ARM
+    std::vector<const char*> memfiles(pmemfiles, pmemfiles+num);
     YAML::Node cpuregs = YAML::LoadFile(cpufile);
     CPUArchState *envp = (CPUArchState *)env->env_ptr;
     for (int i = 0; i < cpuregs["regs"].size(); i++) {
@@ -93,6 +94,18 @@ void load_states_multi(CPUState *env, std::vector<const char *>memfiles, const c
         envp->cp15.ttbr1_el[i] = cpuregs["cp15.ttbr1_el"][i].as<uint32_t>();
     }
     printf("}\n");
+
+    if (cpuregs["cp15.tcr_el"]) {
+        printf("TCR_EL[] = { ");
+        for (int i = 0; i < 4; i++){
+            printf("%#x ", cpuregs["cp15.tcr_el"][i].as<uint32_t>());
+            uint64_t tcr = cpuregs["cp15.tcr_el"][i].as<uint32_t>();
+            envp->cp15.tcr_el[i].raw_tcr = tcr;
+            envp->cp15.tcr_el[i].mask = (tcr&7) ? (((1<<(tcr&7))-1)<<(32-(tcr&7))) : 0;
+            envp->cp15.tcr_el[i].base_mask = ~((1<<(14-(tcr&7)))-1);
+        }
+        printf("}\n");
+    }
 
     printf("SCTLR_EL[] = { ");
     for (int i = 0; i < 4; i++){

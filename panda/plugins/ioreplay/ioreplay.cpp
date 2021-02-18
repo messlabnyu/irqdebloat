@@ -35,7 +35,6 @@ void uninit_plugin(void *);
 #include <vector>
 #include <fstream>
 
-
 std::set<uint64_t> ioaddrs_seen;
 std::deque<uint64_t> iovals;
 std::deque<uint64_t> l1_nums, l2_nums, l3_nums, l4_nums;
@@ -69,7 +68,7 @@ bool fiq = false;
 bool ioreplay_debug = false;
 bool limit_trace = false;
 uint64_t bb_counter = 0;
-const char *memfile;
+std::vector<const char *> memfile;
 const char *cpufile;
 const char *tracedir;
 uint64_t num_blocks = 0;
@@ -301,7 +300,7 @@ void track_dead_ioread() {
 }
 
 static void top_loop(CPUState *cpu) {
-    load_states(cpu, memfile, cpufile);
+    load_states_multi(cpu, memfile.data(), memfile.size(), cpufile);
     // Flush && Reset log state - sometimes we reached here because of tb_exit > TB_EXIT_IDX1
     qemu_loglevel = 0;
     log_compact = 0;
@@ -488,7 +487,7 @@ static int before_block_exec(CPUState *env, TranslationBlock *tb) {
 }
 void after_machine_init(CPUState *env) {
     //printf("TB: " TARGET_FMT_lx "\n", tb->pc);
-    load_states(env, memfile, cpufile);
+    load_states_multi(env, memfile.data(), memfile.size(), cpufile);
     //printf("Enabling taint at pc=" TARGET_FMT_lx "\n", tb->pc);
     start_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
     if (interrupt)
@@ -556,6 +555,13 @@ static void load_replay_log(const char *log) {
     fs.close();
 }
 
+static void parse_memfile_str(const char* memstr) {
+    std::istringstream ss(memstr);
+    std::string s;
+    while (std::getline(ss,s,';'))
+        memfile.emplace_back(strdup(s.c_str()));
+}
+
 bool init_plugin(void *self) {
     panda_require("loadstate");
     if (!init_loadstate_api()) return false;
@@ -567,7 +573,7 @@ bool init_plugin(void *self) {
     while (std::getline(ss, s, '|')) {
         iovals.push_back(strtoul(s.c_str(), NULL, 16));
     }
-    memfile = panda_parse_string(args, "mem", "mem");
+    parse_memfile_str(panda_parse_string(args, "mem", "mem"));
     cpufile = panda_parse_string(args, "cpu", "cpu");
     interrupt = panda_parse_bool(args, "interrupt");
     fiq = panda_parse_bool(args, "fiq");
