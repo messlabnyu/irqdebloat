@@ -72,6 +72,10 @@ print(f"cp15.vbar_el:")
 for _ in range(3):
     print("    - 0x00000000")
 print(f"    - {regs['secure_or_nonsecure_vector_base_address_0']:#010x}")
+print(f"cp15.tcr_el:")
+for _ in range(3):
+    print("    - 0x00000000")
+print(f"    - {regs['translation_table_base_control_0']:#010x}")
 print(f"cp15.scr_el3: 0x0")
 print(f"cp15.hcr_el2: 0x0")
 print(f"uncached_cpsr: {mode:#x}")

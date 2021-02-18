@@ -102,6 +102,20 @@ void load_states(CPUState *env, const char *memfile, const char *cpufile) {
     }
     printf("}\n");
 
+    if (cpuregs["cp15.tcr_el"]) {
+        printf("TCR_EL[] = { ");
+        for (int i = 0; i < 4; i++){
+            printf("%#x ", cpuregs["cp15.tcr_el"][i].as<uint32_t>());
+            uint32_t value = cpuregs["cp15.tcr_el"][i].as<uint32_t>();
+            // Taken from target/arm/helper.c
+            int maskshift = extract32(value, 0, 3);
+            envp->cp15.tcr_el[i].raw_tcr = value;
+            envp->cp15.tcr_el[i].mask = ~(((uint32_t)0xffffffffu) >> maskshift);
+            envp->cp15.tcr_el[i].base_mask = ~((uint32_t)0x3fffu >> maskshift);
+        }
+        printf("}\n");
+    }
+
     if (cpuregs["cp15.tpidr_el"]) {
         printf("TPIDR_EL[] = {");
         for (int i = 0; i < 4; i++){
