@@ -320,6 +320,7 @@ static bool before_block_exec_invalidate_opt(CPUState *cpu, TranslationBlock *tb
         log_compact = 0;
         num_blocks = 0;
         irq_rounds = 0;
+        check_replay_status();
         return true;
     }
     return false;
