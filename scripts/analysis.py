@@ -36,7 +36,7 @@ def check_status(line, mode='linux'):
     l = line.split()
     prev_mode = int(l[-1], 16)
     cur_mode = int(l[2][:-1], 16)
-    if mode in ['linux', 'freebsd', 'beagle', 'romulus', 'sabre', 'vxwork']:
+    if mode in ['linux', 'freebsd', 'beagle', 'romulus', 'sabre', 'vxwork', 'nuri']:
         return (cur_mode == ARM_CPU_MODE_SVC and prev_mode == ARM_CPU_MODE_IRQ)
     else:   # RiscOS
         return cur_mode == ARM_CPU_MODE_IRQ
@@ -47,8 +47,8 @@ def parse_compact_trace(tracefile, tag, tracelimit=True):
         data = fd.read()
     for i in range(8, len(data), 4):
         addr = struct.unpack('<I', data[i:i+4])[0]
-        if tag == "freebsd" and addr == 0xc069bd84:
-            break
+        #if tag == "freebsd" and addr == 0xc069bd84:
+        #    break
         # skip exception vector stub
         if addr&0xffff0000 == 0xffff0000:
             continue
@@ -70,8 +70,8 @@ def parse_trace(tracefile, tag, dedup=True, tracelimit=True):
 
         addr = int(l.split(':')[1].split(']')[0], 16)
         # FreeBSD irq hack: truncate at the end of first intc dispatch loop
-        if tag == "freebsd" and addr == 0xc069bd84:
-            break
+        #if tag == "freebsd" and addr == 0xc069bd84:
+        #    break
         #if tag == "linux" and addr == 0x8051da68:
         #    break
         # skip exception vector stub
@@ -83,8 +83,8 @@ def parse_trace(tracefile, tag, dedup=True, tracelimit=True):
 
         trace.append(addr)
 
-        if tracelimit and len(trace) > 20000:
-            break
+        #if tracelimit and len(trace) > 20000:
+        #    break
     return trace
 
 
