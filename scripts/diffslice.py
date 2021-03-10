@@ -9,6 +9,7 @@ from extract_postdominators import *
 
 PERF = False
 DEBUG = False
+DEBUG_SIM = False
 
 # idea comes from [diffslicing paper](http://bitblaze.cs.berkeley.edu/papers/diffslicing_oakland11.pdf)
 class DiffSliceAnalyzer(object):
@@ -47,7 +48,7 @@ class DiffSliceAnalyzer(object):
                 sim_ei = es[sim_id]
             else:
                 sim_ei = [(x[0], x[1]) for x in es[sim_id]]
-            if DEBUG:
+            if DEBUG and DEBUG_SIM:
                 print "-------- simulate ------------"
                 print [(hex(x[0]), hex(x[1])) for x in sim_ei]
                 print [(hex(x[0]), hex(x[1])) for x in es[chk_id]]
@@ -56,7 +57,7 @@ class DiffSliceAnalyzer(object):
                 sim_vpc += 1
                 if sim_vpc < len(tr[sim_id]):
                     updateei(sim_ei, iaddr(tr[sim_id], sim_vpc), ipdom(tr[sim_id], sim_vpc))
-                    if DEBUG:
+                    if DEBUG and DEBUG_SIM:
                         print " > ", hex(iaddr(tr[sim_id], sim_vpc)), " : ", [(hex(x[0]), hex(x[1])) for x in sim_ei]
                         print " > ", [(hex(x[0]), hex(x[1])) for x in es[chk_id]]
             # check sim failed
@@ -83,11 +84,11 @@ class DiffSliceAnalyzer(object):
                 print "EI Miss match"
                 print [(hex(x[0]),hex(x[1])) for x in ei[0]], [(hex(x[0]),hex(x[1])) for x in ei[1]]
                 if vpc[0] < len(traces[0]):
-                    print hex(iaddr(traces[0], vpc[0])),
+                    print hex(iaddr(traces[0], vpc[0])), vpc[0],
                 else:
                     print "None",
                 if vpc[1] < len(traces[1]):
-                    print hex(iaddr(traces[1], vpc[1]))
+                    print hex(iaddr(traces[1], vpc[1])), vpc[1]
                 else:
                     print "None"
             # log EI stack
@@ -157,12 +158,20 @@ class DiffSliceAnalyzer(object):
                     disalign = 0 if len(ei[0]) > len(ei[1]) else 1
                     # Also check the possiblity of walking the short EI stack up till match
                     sim = simulate_ei_check(1-disalign, disalign, traces, ei, vpc)
+                    if DEBUG:
+                        print "sim disalign", sim, vpc[1-disalign], 1-disalign, vpc[disalign], disalign
+                        print [(hex(x[0]), hex(x[1])) for x in ei[1-disalign]]
+                        print [(hex(x[0]), hex(x[1])) for x in ei[disalign]]
                     if sim and favorbigei:
                         while sim[0] != vpc[1-disalign] and not endoftrace(vpc, traces):
                             proceed(traces, vpc, ei, 1-disalign)
                     else:
                         while len(ei[disalign]) > len(ei[1 - disalign]) and not endoftrace(vpc, traces):
                             proceed(traces, vpc, ei, disalign)
+                    if DEBUG:
+                        print "walk disalign", vpc[1-disalign], 1-disalign, vpc[disalign], disalign
+                        print [(hex(x[0]), hex(x[1])) for x in ei[1-disalign]]
+                        print [(hex(x[0]), hex(x[1])) for x in ei[disalign]]
             if DEBUG:
                 print "EI Realign"
                 print [(hex(x[0]),hex(x[1])) for x in ei[0]], [(hex(x[0]),hex(x[1])) for x in ei[1]]
@@ -335,16 +344,17 @@ class DiffSliceAnalyzer(object):
             for tr in trace:
                 # make sure any trace inside of a basicblock is marked -1
                 if tr[0] != tr[3]:
-                    final_traces[log].append([tr[0], -1, tr[4]])
+                    final_traces[log].append([tr[0], -1, tr[4], -1, -1])
                     continue
                 if tr[2] in immediate_postdoms[tr[1]] and tr[3] in immediate_postdoms[tr[1]][tr[2]]:
-                    final_traces[log].append([tr[0], immediate_postdoms[tr[1]][tr[2]][tr[3]], tr[4]])
+                    final_traces[log].append([tr[0], immediate_postdoms[tr[1]][tr[2]][tr[3]], tr[4], tr[1].start, tr[2]])
                 else:
                     # for incomplete traces, the last few blocks might ended up wrong post-doms
-                    print "failed: ", hex(tr[0]), hex(tr[4]), hex(tr[2]), hex(tr[3]), hex(tr[1].start)
+                    if DEBUG:
+                        print "failed: ", hex(tr[0]), hex(tr[4]), hex(tr[2]), hex(tr[3]), hex(tr[1].start)
                     #for x in immediate_postdoms[tr[1]]:
                     #    print hex(x), ":", [hex(xx) for xx in immediate_postdoms[tr[1]][x]]
-                    final_traces[log].append([tr[0], tr[2], tr[4]])
+                    final_traces[log].append([tr[0], tr[2], tr[4], tr[1].start, -1])
             # log new traces
             if log not in pre_trace['traces']:
                 pre_trace['traces'].append(log)

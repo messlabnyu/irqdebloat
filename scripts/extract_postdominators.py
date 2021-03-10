@@ -184,6 +184,13 @@ def get_return_blocks(return_block_map, bv, raw_trace=None, tracefile=None, merg
             print(" >Done Fixingup ", time.clock()-timecheck)
             timecheck = time.clock()
 
+    # Push the last local_trace
+    for prev_fun in local_trace:
+        if prev_fun in final_traces:
+            final_traces[prev_fun].append(local_trace[prev_fun][:])
+        else:
+            final_traces[prev_fun] = [local_trace[prev_fun][:]]
+
     # append all "end" nodes of current function
     # Note: turns out enumerating function basic blocks is really expensive in BN (it takes 0.05s)
     for f in function_cache:
