@@ -275,23 +275,32 @@ def diff_mc(membase=0):
     traces = preproc_traces(tracewc)
 
     NPROC = 16
-    traces_list = [[] for i in range(NPROC)]
+    BATCH = 16
+    traces_list = [[] for i in range(BATCH)]
     outs = []
-    for i in range(NPROC):
+    for i in range(BATCH):
         subpath = os.path.join(os.path.normpath(outdir), "diff_"+str(i))
         if not os.path.exists(subpath):
             os.makedirs(subpath)
         outs.append(subpath)
     for i, tr in enumerate(traces):
-        traces_list[i%NPROC].append({'dir': tr['dir'], 'full_trace': [t for t in tr['full_trace']]})
+        traces_list[i%BATCH].append({'dir': tr['dir'], 'full_trace': [t for t in tr['full_trace']]})
 
     # preprocess
     pool = [multiprocessing.Process(target=anal_mc, args=(regfile, memfile, traces_list[i], outs[i], membase)) \
             for i in range(NPROC)]
     map(lambda x: x.start(), pool)
+    traceindex = NPROC
     while True in map(lambda x: x.is_alive(), pool):
         time.sleep(60)
         print "Prep: ", map(lambda x: x.is_alive(), pool)
+        for i in range(NPROC):
+            if not pool[i].is_alive() and traceindex < BATCH:
+                pool[i] = multiprocessing.Process( \
+                        target=anal_mc, \
+                        args=(regfile, memfile, traces_list[traceindex], outs[traceindex], membase))
+                pool[i].start()
+                traceindex += 1
 
     # collect preprocess log
     diffdir = os.path.join(os.path.normpath(outdir), "diff")
@@ -306,6 +315,7 @@ def diff_mc(membase=0):
         json.dump(preplog, fd)
 
     # diff
+    NPROC = 16
     diffsets = [[] for i in range(NPROC)]
     counter = 0
     for tr_x, tr_y in itertools.combinations(preplog['traces'], 2):
