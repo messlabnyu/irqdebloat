@@ -254,10 +254,12 @@ def get_return_blocks(return_block_map, bv, raw_trace=None, tracefile=None, merg
                     basic_block = fun.get_basic_block_at(tr[-1])
                     if basic_block.start not in [x.start for x in return_block_map[fun]]:
                         return_block_map[fun].append(basic_block)
-                print "Truncated function:", fun.name, return_block_map[fun]
+                if DEBUG:
+                    print "Truncated function:", fun.name, return_block_map[fun]
     for fun in final_traces.keys():
         if fun not in return_block_map:
-            print "Err function:", fun.name, [[hex(addr) for addr in addrs] for addrs in final_traces[fun]]
+            if DEBUG:
+                print "Err function:", fun.name, [[hex(addr) for addr in addrs] for addrs in final_traces[fun]]
             return_block_map[fun] = []
             addrs = sum(final_traces[fun], [])
             addrs.sort()
@@ -420,6 +422,10 @@ def reprocess_trace(bv, raw_trace, return_blocks, postdom_out):
                 if instaddr >= prev_func[i][1].start and instaddr < prev_func[i][1].end:
                     eos = i
                     break
+                # also check call inst at the end of a basicblock
+                elif instaddr >= prev_func[i][1].start and instaddr == prev_func[i][1].end and prev_func[i][2] and prev_func[i][2]+4 == prev_func[i][1].end:
+                    eos = i
+                    break
             if eos:
                 prev_func = prev_func[:eos]
 
@@ -444,17 +450,6 @@ def reprocess_trace(bv, raw_trace, return_blocks, postdom_out):
         # initialize
         if not prev_func:
             prev_func.append([func, ret_block, None, 0])
-
-        if DEBUG:
-            print "fake_trace : ", fake_trace_cb
-        # check the fixing ups queue
-        if fake_trace_cb:
-            if DEBUG:
-                print fake_trace_cb[0][0], func, callstack_size, len(prev_func)
-            # return out of the function
-            if fake_trace_cb[0][0] != func and callstack_size >= len(prev_func):
-                _, rb = fake_trace_cb.pop(0)
-                scanning_trace.append([rb.start, func, rb, rb.start, -1])   # probably fine with vaddr=-1, it's return block anyway. won't be the diverge point
 
         # push a guard entry into the trace to indicate a control-flow change
         if prev_func[-1][0] != func and scanning_trace[-1] != None:
@@ -491,35 +486,8 @@ def reprocess_trace(bv, raw_trace, return_blocks, postdom_out):
                 if scanning_trace[index] and scanning_trace[index][0] == func.start and seen_callframe:
                     break
             scanning_trace.append([instaddr, func, ret_block, ret_block.start, raw_trace['va'][trace_index]])
-            # pop fake trace cb if seen a real return block
-            if fake_trace_cb and fake_trace_cb[0][1].start == instaddr:
-                fake_trace_cb.pop(0)
         # this is to fix TCG (basicblock) tracing, TCG bb just goes all the way down as long as there's no
         # PC redirection. However, in normal sense, bb shoudl be splited if there's a jump to the middle of that bb.
-        elif ret_block.end in [bb.start for bb in return_blocks[func]]:
-            # get new return block
-            rb = func.get_basic_block_at(ret_block.end)
-            if not rb:
-                rb = [bb for bb in return_blocks[func] if bb.start == ret_block.end][0]
-            assert(rb)
-            # mark the entry to return block in reverse until we reach function start
-            for index in reversed(range(len(scanning_trace))):
-                if not seen_callframe and index == prev_func[-1][3] and prev_func[-1][3] != 0:
-                    seen_callframe = True
-                if scanning_trace[index] and scanning_trace[index][1] == func and scanning_trace[index][2] == None:
-                    scanning_trace[index][2] = rb
-                if scanning_trace[index] and scanning_trace[index][0] == func.start and seen_callframe:
-                    break
-            scanning_trace.append([instaddr, func, rb, ret_block.start, raw_trace['va'][trace_index]])
-            # if we seen it in the middle of a basicblock, we might already registered it before, remove the old registary
-            for i in reversed(range(len(fake_trace_cb))):
-                if fake_trace_cb[i][0] == func and fake_trace_cb[i][1].start == rb.start:
-                    fake_trace_cb.pop(i)
-                    break
-            # register callback when we once again return to this function or ret out of this function
-            fake_trace_cb.append([func, rb])
-            if DEBUG:
-                print "add fake trace : ", hex(instaddr), " : ", func, rb
         else:
             scanning_trace.append([instaddr, func, None, ret_block.start, raw_trace['va'][trace_index]])
             intended_return_block[len(scanning_trace)-1] = return_blocks[func]
@@ -561,6 +529,11 @@ def reprocess_trace(bv, raw_trace, return_blocks, postdom_out):
                     scanning_trace.append(None)
                 # push callstack
                 prev_func.append([func, ret_block, ci, len(scanning_trace)-1])
+        elif ci:
+            if scanning_trace[-1] != None:
+                scanning_trace.append(None)
+            # push callstack
+            prev_func.append([func, ret_block, ci, len(scanning_trace)-1])
 
 
         if (instr_counter % 10000) == 0:
@@ -620,7 +593,8 @@ def reprocess_trace(bv, raw_trace, return_blocks, postdom_out):
             # Function Call start, Pop frame stack
             if prev_frame[-1][0].start == inst[0]:
                 prev_frame = prev_frame[:-1]
-            print "Fixing {INST}, {FUNC}, {BB}".format(INST=hex(inst[0]), FUNC=inst[1].name, BB=hex(inst[2]))
+            if DEBUG:
+                print "Fixing {INST}, {FUNC}, {BB}".format(INST=hex(inst[0]), FUNC=inst[1].name, BB=hex(inst[2]))
         assert(not inst or inst[2])
     return [[tr[0], tr[1], tr[2], tr[3], tr[4]] for tr in scanning_trace if tr]
 
