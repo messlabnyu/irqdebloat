@@ -80,6 +80,7 @@ uint32_t start;
 
 extern "C" {
 #include <qemu/timer.h>
+extern uint64_t replay_cntpct_base;
 }
 static uint64_t start_time = 0;
 // 1 minutes
@@ -612,6 +613,8 @@ bool init_plugin(void *self) {
     if (_timer_io_list[0])
         load_timer_io(_timer_io_list);
     clear_irq = panda_parse_bool(args, "clearirq");
+    const char *_cntpct_base = panda_parse_string(args, "cntpct", "0");
+    replay_cntpct_base = strtoul(_cntpct_base, NULL, 16);
 
     panda_cb pcb = { .unassigned_io_read = ioread };
     panda_register_callback(self, PANDA_CB_UNASSIGNED_IO_READ, pcb);
