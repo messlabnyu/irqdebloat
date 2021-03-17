@@ -249,9 +249,11 @@ void track_dead_ioread() {
     if (!auto_enum) return;
 
     switch (start_new_irq) {
-    case 3:
+    case HWIRQ_FUZZ_TRY-1:
         if (enum_l2 && l1cycle_updated) {
             l2index++;
+            l2cycle_updated = false;
+            l1cycle_updated = false;
             if (l2index == l2_nums.size()) {
                 l2index = 0;
                 l2cycle++;
@@ -259,7 +261,7 @@ void track_dead_ioread() {
             }
         }
         //break;
-    case 2:
+    case HWIRQ_FUZZ_TRY-2:
         //if (l2_blacklist) {
         //    l2_nums.erase(l2_nums.begin()+l2index);
         //    if (l2index == l2_nums.size()) {
@@ -270,6 +272,9 @@ void track_dead_ioread() {
         //}
         if (enum_l3 && l2cycle_updated) {
             l3index++;
+            l3cycle_updated = false;
+            l2cycle_updated = false;
+            l1cycle_updated = false;
             if (l3index == l3_nums.size()) {
                 l3index = 0;
                 l3cycle++;
@@ -277,7 +282,7 @@ void track_dead_ioread() {
             }
         }
         //break;
-    case 1:
+    case HWIRQ_FUZZ_TRY-3:
         //if (l3_blacklist) {
         //    l3_nums.erase(l3_nums.begin()+l3index);
         //    if (l3index == l3_nums.size()) {
@@ -288,6 +293,10 @@ void track_dead_ioread() {
         //}
         if (enum_l4 && l3cycle_updated) {
             l4index++;
+            l4cycle_updated = false;
+            l3cycle_updated = false;
+            l2cycle_updated = false;
+            l1cycle_updated = false;
             if (l4index == l4_nums.size()) {
                 l4index = 0;
                 l4cycle++;
