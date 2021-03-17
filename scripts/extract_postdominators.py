@@ -595,7 +595,7 @@ def reprocess_trace(bv, raw_trace, return_blocks, postdom_out):
                 prev_frame = prev_frame[:-1]
             if DEBUG:
                 print "Fixing {INST}, {FUNC}, {BB}".format(INST=hex(inst[0]), FUNC=inst[1].name, BB=hex(inst[2]))
-        assert(not inst or inst[2])
+        assert(inst == None or inst[2] != None)
     return [[tr[0], tr[1], tr[2], tr[3], tr[4]] for tr in scanning_trace if tr]
 
 
