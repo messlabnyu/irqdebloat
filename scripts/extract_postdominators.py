@@ -393,13 +393,28 @@ def reprocess_trace(bv, raw_trace, return_blocks, postdom_out):
 
         if shadow_instr:
             fp = bv.get_functions_containing(shadow_instr)
-            fn = bv.get_functions_containing(next_instr) if next_instr else None
-            samefunc = fp and fn and True in [f.start in [x.start for x in fn] for f in fp]
-            # Check function returns
-            if next_instr != shadow_instr and samefunc:
-                instaddr = shadow_instr
+            #fn = bv.get_functions_containing(next_instr) if next_instr else None
+            # check if next trace and inferred shadow trace are in the same function, if not, than func returns
+            #samefunc = fp and fn and True in [f.start in [x.start for x in fn] for f in fp]
+
+            # FreeBSD is diffcult. It's something like follows: node C delivers IRQ handlers, and diff two traces:
+            # A->C->B->Ret and A->B->C->B->Ret
+            #        _A_
+            #   ______|
+            #  |      |
+            #  |  /-->v
+            #  |  |  _B_
+            #  |  |   |______ 
+            #  |  |   |      |
+            #  \--|-->v      v
+            #     |  _C_   _Ret_
+            #     |___|
+            #
             # Check call instruction
-            elif shadow_next_call and bv.get_disassembly(shadow_next_call).split()[-1] == hex(next_instr):
+            if shadow_next_call and bv.get_disassembly(shadow_next_call).split()[-1] == hex(next_instr):
+                instaddr = shadow_instr
+            # Check function returns
+            elif next_instr != shadow_instr and fp:
                 instaddr = shadow_instr
             else:
                 shadow_instr = None
@@ -573,6 +588,7 @@ def reprocess_trace(bv, raw_trace, return_blocks, postdom_out):
     prev_frame = []
     for tridx in reversed(range(len(scanning_trace))):
         inst = scanning_trace[tridx]
+        origretb = inst[2] if inst else None
         if inst and not prev_frame:
             # Auto append last seen basicblock when stack is empty
             prev_frame.append([inst[1], inst[2].start if inst[2] else inst[0]])
@@ -594,7 +610,7 @@ def reprocess_trace(bv, raw_trace, return_blocks, postdom_out):
             if prev_frame[-1][0].start == inst[0]:
                 prev_frame = prev_frame[:-1]
             if DEBUG:
-                print "Fixing {INST}, {FUNC}, {BB}".format(INST=hex(inst[0]), FUNC=inst[1].name, BB=hex(inst[2]))
+                print "Fixing {INST}, {FUNC}, ret: {ORIGBB} => {BB}".format(INST=hex(inst[0]), FUNC=inst[1].name, ORIGBB=hex(origretb.start) if origretb else None, BB=hex(inst[2]))
         assert(inst == None or inst[2] != None)
     return [[tr[0], tr[1], tr[2], tr[3], tr[4]] for tr in scanning_trace if tr]
 
