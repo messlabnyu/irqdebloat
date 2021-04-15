@@ -66,7 +66,10 @@ def check_indbr(bv,pa):
             continue
         mnemonic = i[0]
         op = "".join(i[1:])
-        if mnemonic in ["blx","bx"] and op.startswith("r"):
+        if mnemonic in ["blx","bx", "bl"] and op.startswith("0x"):
+            # skip any direct call before indirect call
+            break
+        elif mnemonic in ["blx","bx"] and op.startswith("r"):
             #print hex(dp), ":", [hex(x) for x in diverge_targets[d]]
             return idx
         elif mnemonic == "ldm" and not op.startswith("sp") and not op.startswith("r13") and "pc}" in op:
@@ -75,6 +78,8 @@ def check_indbr(bv,pa):
         elif mnemonic == "b":
             break
         elif mnemonic == "ldm" and (op.startswith("sp") or op.startswith("r13")) and "pc}" in op:
+            break
+        elif mnemonic == "ldr" and op.startswith("pc,"):
             break
         elif mnemonic == "bx" and op == "lr":
             break
@@ -183,7 +188,7 @@ for x in divlist:
         continue
     if not seen_ind.intersection([x+4*si for si in range(idx+1)]):
         tgs = [hex(d) for d in diverge_targets[str(x)] if d in glob_functions]
-        if tgs:
+        if len(tgs)>1:      # Make sure to have more than One target
             sl.append((x, float(sum(bpmap[x]))/len(bpmap[x]) if bpmap[x] else 0))
             seen_ind.add(x)
 print("indirct call in divergence points: ", len(sl))
@@ -213,3 +218,4 @@ for p in pbp:
     print("DEBUG", hex(p))
     if p in alltargets:
         print(hex(p))
+print "False Positives: ", [(hex(d), hex(getva(d))) for d in alltargets if d not in pbp]
