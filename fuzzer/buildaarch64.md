@@ -20,4 +20,6 @@ index b47ecc6a56..94a42b8afd 100755
 CC=clang-7 CXX=clang++-7 cmake -G Unix Makefiles -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=On -DCMAKE_INSTALL_PREFIX=/home/hu/llvm -DLLVM_REQUIRES_RTTI=ON  ..
 
 ## Make
-CXXFLAGS=-I/usr/lib/llvm-7/include/c++/v1// LD_LIBRARY_PATH=/home/hu/llvm/lib/: make
+./fuzzer/build/config-host.mak:CLANG_CXXFLAGS:=-I/home/hu/llvm-3.3.src/projects/libcxx/include
+
+CXXFLAGS=-I/usr/lib/llvm-7/include/c++/v1// LD_LIBRARY_PATH=/home/hu/llvm/lib/:$LD_LIBRARY_PATH  make

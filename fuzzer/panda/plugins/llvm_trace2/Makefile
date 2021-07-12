@@ -5,7 +5,7 @@ QEMU_CXXFLAGS+= $(LLVM_CXXFLAGS)
 # CFLAGS+=
 # LIBS+=
 
-QEMU_CXXFLAGS+= -Wno-type-limits -Wno-cast-qual
+QEMU_CXXFLAGS+= -Wno-type-limits -Wno-cast-qual -frtti
 
 # The main rule for your plugin. List all object-file dependencies.
 $(PLUGIN_TARGET_DIR)/panda_$(PLUGIN_NAME).so: \
