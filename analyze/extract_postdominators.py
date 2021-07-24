@@ -346,6 +346,13 @@ def is_return_inst(function, address):
     #    return True
     return False
 
+def get_inst_length(bv, iaddr):
+    step = bv.get_instruction_length(iaddr)
+    # Urgh, randomly occured BN issue, wyk
+    if step == 0:
+        step = 4
+    return step
+
 def find_next_callinst(bv, function, address):
     bb = function.get_basic_block_at(address)
     if not bb:
@@ -354,7 +361,7 @@ def find_next_callinst(bv, function, address):
     while iaddr >= bb.start and iaddr < bb.end:
         if is_call_inst(function, iaddr):
             return iaddr
-        iaddr += bv.get_instruction_length(iaddr)
+        iaddr += get_inst_length(bv, iaddr)
     return None
 
 def check_return(bv, function, address):
@@ -365,7 +372,7 @@ def check_return(bv, function, address):
     while iaddr >= bb.start and iaddr < bb.end:
         if is_return_inst(function, iaddr):
             return iaddr
-        iaddr += bv.get_instruction_length(iaddr)
+        iaddr += get_inst_length(bv, iaddr)
     return None
 
 def reprocess_trace(bv, raw_trace, return_blocks, postdom_out):
