@@ -3,6 +3,7 @@ import sys
 import json
 import time
 import itertools
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from instrument import vm
 
 from extract_postdominators import *
@@ -259,16 +260,21 @@ class DiffSliceAnalyzer(object):
         with open(self.outputFile("patch.json"), 'w') as fd:
             json.dump({'locations': [pt for pt in patch_points]}, fd)
 
-    def rawmem_bn_init(self, reg, mem, membase=0):
+    def rawmem_bn_init(self, reg, mem, membase=0, arch='armv7'):
         bv = BinaryViewType['Raw'].open(mem)
         bv.store_metadata('ephemeral', {'binaryninja.analysis.max_function_size': 0})
-        bv.platform = Architecture['armv7'].standalone_platform
-        self.mm = vm.VM(reg, mem, membase)
+        bv.platform = Architecture[arch].standalone_platform
+        self.mm = vm.VM(reg, mem, membase, arch)
 
         #binaryninja.log.log_to_file(0, "log")
         #binaryninja.log.redirect_output_to_log()
 
-        ev = [0xffff0000+i*4 for i in range(8)]
+        if arch == 'armv7':
+            ev = [0xffff0000+i*4 for i in range(8)]
+        elif arch == 'mipsel32':
+            ev = [0x80000000, 0x80000180]
+        else:
+            ev = []
         for va in ev:
             pa = self.mm.translate(va) - self.mm.cpu._physical_mem_base
             bv.define_auto_symbol(Symbol(SymbolType.FunctionSymbol, pa, "sub_{:x}".format(pa)))

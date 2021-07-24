@@ -33,10 +33,12 @@ class TraceBucket(object):
         return next(iter(self.traces))
 
 def check_status(line, mode='linux'):
+    if mode == 'wrt':
+        return True
     l = line.split()
     prev_mode = int(l[-1], 16)
     cur_mode = int(l[2][:-1], 16)
-    if mode in ['linux', 'freebsd', 'beagle', 'romulus', 'sabre', 'vxwork', 'nuri']:
+    if mode in ['linux', 'freebsd', 'beagle', 'romulus', 'sabre', 'vxwork', 'nuri', 'steamlink']:
         return (cur_mode == ARM_CPU_MODE_SVC and prev_mode == ARM_CPU_MODE_IRQ)
     else:   # RiscOS
         return cur_mode == ARM_CPU_MODE_IRQ
@@ -67,6 +69,8 @@ def parse_trace(tracefile, tag, dedup=True, tracelimit=True):
         # Note: ignore Data Abt? or truncate trace here?
         if l.startswith("Stopped"):
             break
+        if not l.startswith("Trace"):
+            continue
 
         addr = int(l.split(':')[1].split(']')[0], 16)
         # FreeBSD irq hack: truncate at the end of first intc dispatch loop
@@ -228,9 +232,9 @@ def diff_rawmem(membase=0):
 
     anal.bn_analyze(bv, traces, outdir)
 
-def anal_mc(reg, mem, tr, out, membase):
+def anal_mc(reg, mem, tr, out, membase, arch):
     anal = DiffSliceAnalyzer()
-    bv = anal.rawmem_bn_init(reg, mem, membase)
+    bv = anal.rawmem_bn_init(reg, mem, membase, arch)
     anal.bn_analyze(bv, tr, out, mcore=True)
 
 def diffhand_mc(tracepairs, out):
@@ -265,7 +269,7 @@ def diffhand_mc(tracepairs, out):
             json.dump(jout, fd)
 
 
-def diff_mc(membase=0):
+def diff_mc(membase=0, arch='armv7'):
     tracewc = []
     for r,ds,_ in os.walk(tracedir):
         tracewc.extend([os.path.join(r,d) for d in ds])
@@ -287,7 +291,7 @@ def diff_mc(membase=0):
         traces_list[i%BATCH].append({'dir': tr['dir'], 'full_trace': [t for t in tr['full_trace']]})
 
     # preprocess
-    pool = [multiprocessing.Process(target=anal_mc, args=(regfile, memfile, traces_list[i], outs[i], membase)) \
+    pool = [multiprocessing.Process(target=anal_mc, args=(regfile, memfile, traces_list[i], outs[i], membase, arch)) \
             for i in range(NPROC)]
     map(lambda x: x.start(), pool)
     traceindex = NPROC
@@ -298,7 +302,7 @@ def diff_mc(membase=0):
             if not pool[i].is_alive() and traceindex < BATCH:
                 pool[i] = multiprocessing.Process( \
                         target=anal_mc, \
-                        args=(regfile, memfile, traces_list[traceindex], outs[traceindex], membase))
+                        args=(regfile, memfile, traces_list[traceindex], outs[traceindex], membase, arch))
                 pool[i].start()
                 traceindex += 1
 
@@ -334,11 +338,20 @@ def get_membase(tag):
         return 0x10000000
     if tag == "nuri":
         return 0x40000000
+    if tag == "steamlink":
+        return 0x1000000
     return 0
+
+def get_arch(tag):
+    if tag == "wrt":
+        return 'mipsel32'
+    else:
+        return 'armv7'
 
 if __name__ == "__main__":
     #debugdiff()
     #diff()
     membase = get_membase(ostag)
+    arch = get_arch(ostag)
     #diff_rawmem(membase)
-    diff_mc(membase)
+    diff_mc(membase, arch)

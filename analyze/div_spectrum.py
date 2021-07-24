@@ -39,9 +39,16 @@ elif ostag=="vxwork":
     bp=[0x254400, 0x3806ec, 0x3dd474, 0x427fcc, 0x44bc48, 0x44ce80, 0x44eba4, 0x45046c, 0x5ba158, 0x60e360]
 elif ostag=="nuri":
     bp=[0xc0019118, 0xc00191b4, 0xc001acdc, 0xc006bfa0, 0xc006c5e4, 0xc006c7a0, 0xc0146008, 0xc016fd7c, 0xc01a5700, 0xc01a58a0]
+else:
+    bp=[]
+
+if ostag == "wrt":
+    arch = "mipsel32"
+else:
+    arch = "armv7"
 
 anal = DiffSliceAnalyzer()
-bv = anal.rawmem_bn_init(regfile, memfile, get_membase(ostag))
+bv = anal.rawmem_bn_init(regfile, memfile, get_membase(ostag), arch)
 trlist = [tracedir]
 ddlist = [outdir]
 #bv = anal.rawmem_bn_init("/data/tonyhu/irq/irq_fuzzer/snapshots/freebsd.reg", "/data/tonyhu/irq/irq_fuzzer/snapshots/freebsd.mem")
@@ -54,35 +61,44 @@ def getva(pa):
         if pa&(~(sz-1)) == p-anal.mm.cpu._physical_mem_base:
             #assert (not va)
             va = v+(pa&(sz-1))
+    #assert(va)
     return va
 
 def check_indbr(bv,pa):
+    retry = 2
     for idx in range(21):
         i = bv.get_disassembly(pa+idx*4)
         if not i:
+            retry -= 1
+            if retry > 0:
+                continue
             return -1
         i = i.split()
         if len(i) < 2:
             continue
         mnemonic = i[0]
         op = "".join(i[1:])
-        if mnemonic in ["blx","bx", "bl"] and op.startswith("0x"):
-            # skip any direct call before indirect call
-            break
-        elif mnemonic in ["blx","bx"] and op.startswith("r"):
-            #print hex(dp), ":", [hex(x) for x in diverge_targets[d]]
-            return idx
-        elif mnemonic == "ldm" and not op.startswith("sp") and not op.startswith("r13") and "pc}" in op:
-            return idx
-        #elif i.mnemonic.startswith("b") and not i.mnemonic.startswith("bic"):
-        elif mnemonic == "b":
-            break
-        elif mnemonic == "ldm" and (op.startswith("sp") or op.startswith("r13")) and "pc}" in op:
-            break
-        elif mnemonic == "ldr" and op.startswith("pc,"):
-            break
-        elif mnemonic == "bx" and op == "lr":
-            break
+        if bv.arch.name == 'armv7':
+            if mnemonic in ["blx","bx", "bl"] and op.startswith("0x"):
+                # skip any direct call before indirect call
+                break
+            elif mnemonic in ["blx","bx"] and op.startswith("r"):
+                #print hex(dp), ":", [hex(x) for x in diverge_targets[d]]
+                return idx
+            elif mnemonic == "ldm" and not op.startswith("sp") and not op.startswith("r13") and "pc}" in op:
+                return idx
+            #elif i.mnemonic.startswith("b") and not i.mnemonic.startswith("bic"):
+            elif mnemonic == "b":
+                break
+            elif mnemonic == "ldm" and (op.startswith("sp") or op.startswith("r13")) and "pc}" in op:
+                break
+            elif mnemonic == "ldr" and op.startswith("pc,"):
+                break
+            elif mnemonic == "bx" and op == "lr":
+                break
+        elif bv.arch.name == 'mipsel32':
+            if mnemonic in ["jr", "jalr"] and not op.startswith("$ra"):
+                return idx
     return -1
 
 diverge_targets = {}
@@ -105,6 +121,7 @@ for dd in ddlist:
 glob_indbr = {}
 bpmap = {}
 for x in diverge_targets:
+    #print(x, [hex(a) for a in diverge_targets[x]])
     bpmap[int(x)] = []
 
 raw_traces = {}
@@ -128,6 +145,8 @@ for trace_dir in trlist:
                 for l in data.strip().split('\n')[1:]:
                     if l.startswith("Stopped"):
                         break
+                    if not l.startswith("Trace"):
+                        continue
                     lines.append(int(l.split(':')[1].split(']')[0],16))
             lcnt = 0
             raw_traces[trpath] = []
