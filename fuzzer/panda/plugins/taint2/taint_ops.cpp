@@ -330,15 +330,20 @@ void taint_select(
     tassert(false && "Couldn't find selected argument!!");
 }
 
+#ifdef TARGET_MIPS
+#define cpu_off(member) (uint64_t)(&((CPUArchState *)0)->active_tc.member)
+#define cpu_size(member) sizeof(((CPUArchState *)0)->active_tc.member)
+#else
 #define cpu_off(member) (uint64_t)(&((CPUArchState *)0)->member)
 #define cpu_size(member) sizeof(((CPUArchState *)0)->member)
+#endif
 #define cpu_endoff(member) (cpu_off(member) + cpu_size(member))
 #define cpu_contains(member, offset) \
     (cpu_off(member) <= (size_t)(offset) && \
      (size_t)(offset) < cpu_endoff(member))
 
 static void find_offset(FastShad *greg, FastShad *gspec, uint64_t offset, uint64_t labels_per_reg, FastShad **dest, uint64_t *addr) {
-#ifdef TARGET_PPC
+#if defined (TARGET_PPC) || defined (TARGET_MIPS)
     if (cpu_contains(gpr, offset)) {
 #else 
     if (cpu_contains(regs, offset)) {
@@ -346,6 +351,8 @@ static void find_offset(FastShad *greg, FastShad *gspec, uint64_t offset, uint64
         *dest = greg;
 #ifdef TARGET_PPC
         *addr = (offset - cpu_off(gpr)) * labels_per_reg / sizeof(((CPUArchState *)0)->gpr[0]);
+#elif defined (TARGET_MIPS)
+        *addr = (offset - cpu_off(gpr)) * labels_per_reg / sizeof(((CPUArchState *)0)->active_tc.gpr[0]);
 #else
         *addr = (offset - cpu_off(regs)) * labels_per_reg / sizeof(((CPUArchState *)0)->regs[0]);
 #endif

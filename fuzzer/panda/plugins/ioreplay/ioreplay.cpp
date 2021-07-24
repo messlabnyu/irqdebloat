@@ -80,7 +80,10 @@ uint32_t start;
 
 extern "C" {
 #include <qemu/timer.h>
+
+#ifdef TARGET_ARM
 extern uint64_t replay_cntpct_base;
+#endif
 }
 static uint64_t start_time = 0;
 // 1 minutes
@@ -91,6 +94,11 @@ static uint64_t trace_start = 0;
 static uint64_t trace_count = 0;
 static std::vector<gchar*> ioseq;
 
+#ifdef TARGET_MIPS
+static std::vector<uint32_t> mips_ipvec;
+static uint32_t mips_ipidx = 0;
+#endif
+
 #ifdef TARGET_ARM
 #define LOG_IO_TRACE \
         if (!compact_output) \
@@ -100,6 +108,15 @@ static std::vector<gchar*> ioseq;
         if (ioreplay_debug) \
             printf("IO READ pc=" TARGET_FMT_lx " addr=%08" HWADDR_PRIx " size %u val=%08" PRIx64 "\n", \
                 cpu->regs[15], addr, size, *val);
+#elif defined (TARGET_MIPS)
+#define LOG_IO_TRACE \
+        if (!compact_output) \
+            ioseq.emplace_back( \
+                    g_strdup_printf("IO READ pc=" TARGET_FMT_lx " addr=%08" HWADDR_PRIx " size %u val=%08" PRIx64 "\n", \
+                        cpu->active_tc.PC, addr, size, *val)); \
+        if (ioreplay_debug) \
+            printf("IO READ pc=" TARGET_FMT_lx " addr=%08" HWADDR_PRIx " size %u val=%08" PRIx64 "\n", \
+                cpu->active_tc.PC, addr, size, *val);
 #else
 #define LOG_IO_TRACE
 #endif
@@ -309,13 +326,25 @@ void track_dead_ioread() {
     }
 }
 
+static bool reset_machine = false;
 static void top_loop(CPUState *cpu) {
+    if (!reset_machine)   return;
     load_states_multi(cpu, memfile.data(), memfile.size(), cpufile);
     // Flush && Reset log state - sometimes we reached here because of tb_exit > TB_EXIT_IDX1
     qemu_loglevel = 0;
     log_compact = 0;
     num_blocks = 0;
     irq_rounds = 0;
+    reset_machine = false;
+#ifdef TARGET_MIPS
+    CPUArchState *env = (CPUArchState *)cpu->env_ptr;
+    env->CP0_Cause ^= (env->CP0_Cause&0xff00);
+    mips_ipidx++;
+    if (mips_ipidx == mips_ipvec.size())
+        mips_ipidx = 0;
+    env->CP0_Cause |= ((1<<mips_ipvec[mips_ipidx])<<8);
+    cpu_interrupt(cpu, CPU_INTERRUPT_HARD);
+#endif
 }
 
 extern bool panda_exit_loop;
@@ -331,6 +360,7 @@ static bool before_block_exec_invalidate_opt(CPUState *cpu, TranslationBlock *tb
         num_blocks = 0;
         irq_rounds = 0;
         check_replay_status();
+        reset_machine = true;
         return true;
     }
     return false;
@@ -355,27 +385,52 @@ static target_ulong vbar_addr(CPUState *cs) {
 }
 #endif
 
+#ifdef TARGET_ARM
+#define PC(E)   ((E)->regs[15])
+#elif defined (TARGET_MIPS)
+#define PC(E)   ((E)->active_tc.PC)
+#define cpsr_read(E)    0
+#endif
+
 static int before_block_exec(CPUState *env, TranslationBlock *tb) {
+#if defined (TARGET_ARM) || defined (TARGET_MIPS)
+    CPUArchState *cpu = (CPUArchState *)env->env_ptr;
 #ifdef TARGET_ARM
     // Cortex-A exception vector:
     // https://developer.arm.com/documentation/ddi0301/h/programmer-s-model/exceptions/exception-vectors
-    CPUArchState *cpu = (CPUArchState *)env->env_ptr;
     uint32_t cpu_mode = cpu->uncached_cpsr & CPSR_M;
+#elif defined (TARGET_MIPS)
+    uint32_t cpu_mode = cpu->CP0_Cause & 0x7c;
+    //if (PC(cpu) == 0x80000000)
+    //    qemu_log("DEBUG bandvaddr: %x\n", cpu->CP0_BadVAddr);
+    //qemu_log("DEBUG TLB: %x\n", mips_cpu_get_phys_page_debug(env, tmpaddr));
+    //fprintf(stderr, "DEBUG MIPS mode: %x, PC: %x, EPC: %x, Cause: %x\n", cpu->CP0_Status, cpu->active_tc.PC, cpu->CP0_EPC, cpu->CP0_Cause);
+#endif
 
     if (compact_output && log_compact && num_blocks < MAX_BLOCKS) {
-        if (!quickdedup || trace_seq.empty() || cpu->regs[15]!=trace_seq.back())
-            trace_seq.emplace_back(cpu->regs[15]);
+        if (!quickdedup || trace_seq.empty() || PC(cpu)!=trace_seq.back())
+            trace_seq.emplace_back(PC(cpu));
     }
 
     switch (cpu_mode) {
+#ifdef TARGET_ARM
     case ARM_CPU_MODE_FIQ:
     case ARM_CPU_MODE_IRQ:
     case ARM_CPU_MODE_SVC:
     case ARM_CPU_MODE_ABT:
+#elif defined (TARGET_MIPS)
+    case 0: // Interrupt
+#endif
+
+#ifdef TARGET_ARM
         // ignore the very initial exectution
         if (!prev_cpu_mode) break;
         // cpu_mode changed to FIQ/IRQ/SVC indicates entering interrupt handling
-        if (cpu_mode^prev_cpu_mode || cpu->regs[15] == vbar_addr(env)+0x18/*IRQ_ENTRY*/) {
+        if (cpu_mode^prev_cpu_mode || cpu->regs[15] == vbar_addr(env)+0x18/*IRQ_ENTRY*/)
+#elif defined (TARGET_MIPS)
+        if (PC(cpu) == 0x80000180)
+#endif
+        {
             //fprintf(stderr, "DEBUG [%x](%d) cpsr %x, prev %x\n", cpu->regs[15], env->cpu_index, cpsr_read(cpu), prev_cpu_mode);
             if (!compact_output) {
                 qemu_log_flush();
@@ -394,9 +449,12 @@ static int before_block_exec(CPUState *env, TranslationBlock *tb) {
                 ioseq.clear();
             } else {
                 if (trace_seq_log) {
-                    if (!quickdedup \
-                            || (nosvc && trace_seq[0]==ARM_CPU_MODE_IRQ) \
-                            || (!nosvc && trace_seq[1]==ARM_CPU_MODE_IRQ && trace_seq[0]==ARM_CPU_MODE_SVC)) {
+                    if (!quickdedup
+#ifdef TARGET_ARM
+                            || (nosvc && trace_seq[0]==ARM_CPU_MODE_IRQ)
+                            || (!nosvc && trace_seq[1]==ARM_CPU_MODE_IRQ && trace_seq[0]==ARM_CPU_MODE_SVC)
+#endif
+                            ) {
                         FILE *f = fopen(trace_seq_log, "wb");
                         fwrite(trace_seq.data(), sizeof(target_ulong), trace_seq.size(), f);
                         fclose(f);
@@ -449,19 +507,20 @@ static int before_block_exec(CPUState *env, TranslationBlock *tb) {
                 char *newlog = g_strdup_printf("%s/trace_%lld.log", tracedir, trace_count);
                 qemu_set_log_filename(newlog, nullptr);
                 qemu_log("cpu mode: %x, prev: %x\n", cpu_mode, prev_cpu_mode);
-                qemu_log("Trace [0: %08x] cpsr %x, prev %x\n", cpu->regs[15], cpsr_read(cpu), prev_cpu_mode);
+                qemu_log("Trace [0: %08x] cpsr %x, prev %x\n", PC(cpu), cpsr_read(cpu), prev_cpu_mode);
             } else {
                 log_compact = 1;
                 trace_seq_log = g_strdup_printf("%s/trace_%lld.pact", tracedir, trace_count);
                 trace_seq.clear();
                 trace_seq.emplace_back(cpu_mode);
                 trace_seq.emplace_back(prev_cpu_mode);
-                trace_seq.emplace_back(cpu->regs[15]);
+                trace_seq.emplace_back(PC(cpu));
             }
 
             trace_count++;
             num_blocks = 0;
 
+#ifdef TARGET_ARM
             if (nosvc) {
                 if (cpu_mode == ARM_CPU_MODE_IRQ) {
                     track_dead_ioread();
@@ -487,6 +546,15 @@ static int before_block_exec(CPUState *env, TranslationBlock *tb) {
                         env->interrupt_request = 1;
                 }
             }
+#elif defined (TARGET_MIPS)
+            track_dead_ioread();
+            check_replay_status();
+            start_new_irq = HWIRQ_FUZZ_TRY;
+            if (clear_irq) {
+                env->interrupt_request = 0;
+                cpu->CP0_Cause ^= (cpu->CP0_Cause&0xff00);
+            }
+#endif
         }
         break;
     default:
@@ -497,13 +565,29 @@ static int before_block_exec(CPUState *env, TranslationBlock *tb) {
     return 0;
 }
 void after_machine_init(CPUState *env) {
+    CPUArchState *cpu = (CPUArchState *)env->env_ptr;
     //printf("TB: " TARGET_FMT_lx "\n", tb->pc);
     load_states_multi(env, memfile.data(), memfile.size(), cpufile);
     //printf("Enabling taint at pc=" TARGET_FMT_lx "\n", tb->pc);
     start_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
-    if (interrupt)
+    if (interrupt) {
+#ifdef TARGET_MIPS
+        //for (int i = 0; i < 8; i++)
+        //    qemu_set_irq((qemu_irq)cpu->irq[7], 1/*level*/);
+        for (int i = 2; i < 8; i++)
+            if (cpu->CP0_Status & ((1<<i)<<8))
+                mips_ipvec.emplace_back(i);
+        fprintf(stderr, "Load masked IP masks: ");
+        for (uint32_t i : mips_ipvec)
+            fprintf(stderr, " %u,", i);
+        fprintf(stderr, "\n");
+        cpu->CP0_Cause |= (0x3f<<10);
+        cpu_interrupt(env, CPU_INTERRUPT_HARD);
+#else
         cpu_interrupt(env, CPU_INTERRUPT_HARD |
             (fiq ? CPU_INTERRUPT_FIQ : 0));
+#endif
+    }
 }
 
 static void prepare_enum_2bit(std::deque<uint64_t> &preirq) {
@@ -622,8 +706,10 @@ bool init_plugin(void *self) {
     if (_timer_io_list[0])
         load_timer_io(_timer_io_list);
     clear_irq = panda_parse_bool(args, "clearirq");
+#ifdef TARGET_ARM
     const char *_cntpct_base = panda_parse_string(args, "cntpct", "0");
     replay_cntpct_base = strtoul(_cntpct_base, NULL, 16);
+#endif
 
     panda_cb pcb = { .unassigned_io_read = ioread };
     panda_register_callback(self, PANDA_CB_UNASSIGNED_IO_READ, pcb);

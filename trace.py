@@ -18,20 +18,33 @@ def build_cmd(ostag, out, reg, mem, index=None, replay=None, iolist=None, nullpa
     if not os.path.exists(outdir):
         os.makedirs(outdir)
     if ostag == "romulus":
+        arch = 'arm'
         cpu = 'arm1176'
         memrange = '0x80000000-0x90000000'
     elif ostag == "beagle":
+        arch = 'arm'
         cpu = 'cortex-a8'
         memrange = '0x80000000-0x90000000'
     elif ostag in ["linux", "linux_virt", "freebsd", "riscos"]:
+        arch = 'arm'
         cpu = 'cortex-a7'
         memrange = '0x00000000-0x3f000000'
     elif ostag in ["sabre", "vxwork"]:
+        arch = 'arm'
         cpu = 'cortex-a9'
         memrange = '0x10000000-0x18000000'
     elif ostag == "nuri":
+        arch = 'arm'
         cpu = 'cortex-a9'
         memrange = '0x40000000-0x80000000'
+    elif ostag == "steamlink":
+        arch = 'arm'
+        cpu = 'cortex-a9'
+        memrange = '0x1000000-0x12000000'
+    elif ostag == "wrt":
+        arch = 'mipsel'
+        cpu = '4KEc'
+        memrange = '0-0x1000000'
 
     if replay == None:
         if index != None:
@@ -48,8 +61,13 @@ def build_cmd(ostag, out, reg, mem, index=None, replay=None, iolist=None, nullpa
                     #'enuml2',
                     #'enuml3',
                     ]
-        ioargs = [f'tracedir={outdir}', f'mem={mem}', f'cpu={reg}', f'{",".join(enum_args)}',
-                'tracelimit', 'interrupt', 'auto']
+
+        if ostag == "wrt":
+            enum_args = None
+
+        ioargs = [f'tracedir={outdir}', f'mem={mem}', f'cpu={reg}', 'tracelimit', 'interrupt']
+        if enum_args:
+            ioargs.extend([f'{",".join(enum_args)}', 'auto'])
     else:
         ioargs = [f'tracedir={outdir}', f'mem={mem}', f'cpu={reg}', f'replay={replay}',
                 'tracelimit', 'interrupt']
@@ -61,6 +79,8 @@ def build_cmd(ostag, out, reg, mem, index=None, replay=None, iolist=None, nullpa
         ioargs.append('nosvc')
     if ostag == "vxwork":
         ioargs.append('clearirq')
+    if ostag == "steamlink":
+        nullpad = False
     if nullpad:
         ioargs.append('null')
     if compact:
@@ -69,7 +89,7 @@ def build_cmd(ostag, out, reg, mem, index=None, replay=None, iolist=None, nullpa
         ioargs.append(f'iolist={iolist}')
     #ioargs.append('debug')
 
-    cmd = [os.path.join(DIR, "irq_fuzzer/build/arm-softmmu/qemu-system-arm"),
+    cmd = [os.path.join(DIR, f"fuzzer/build/{arch}-softmmu/qemu-system-{arch}"),
             '-machine', f'rehosting,mem-map=MEM {memrange}',
             '-panda', f'ioreplay:{",".join(ioargs)}',
             '-cpu', f'{cpu}',
@@ -148,5 +168,5 @@ if __name__ == "__main__":
 
     # Ensure that RaspberryPi Linux emulation has CNTPCT (emulated coprocessor) no less than the stored counter value to avoid (infinite) loops while irq_enter
     # The stored counter value is reverse engineered through (timekeeper_advance)arch_counter_get_cntpct, mm._read_word(mm.translate(0x80DC0828))
-    #debug(args.ostag, outdir, reg, mem, replay=args.replay, iolist=args.iolist, cntpct=0x31186096)
-    mc(args.ostag, outdir, reg, mem, replaydir=args.replay, iolist=args.iolist, cntpct=0x31186096)
+    debug(args.ostag, outdir, reg, mem, replay=args.replay, iolist=args.iolist, cntpct=0x31186096)
+    #mc(args.ostag, outdir, reg, mem, replaydir=args.replay, iolist=args.iolist, cntpct=0x31186096)

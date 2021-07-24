@@ -45,7 +45,6 @@ void load_states(CPUState *env, const char *memfile, const char *cpufile) {
 
 void load_states_multi(CPUState *env, const char **pmemfiles, int num, const char *cpufile) {
 #ifdef TARGET_ARM
-    std::vector<const char*> memfiles(pmemfiles, pmemfiles+num);
     YAML::Node cpuregs = YAML::LoadFile(cpufile);
     CPUArchState *envp = (CPUArchState *)env->env_ptr;
     for (int i = 0; i < cpuregs["regs"].size(); i++) {
@@ -156,7 +155,34 @@ void load_states_multi(CPUState *env, const char **pmemfiles, int num, const cha
     if (env->num_ases > 1)
         env->cpu_ases[0].memory_dispatch = env->cpu_ases[1].memory_dispatch;
 
+#elif defined(TARGET_MIPS)
+    YAML::Node cpuregs = YAML::LoadFile(cpufile);
+    CPUArchState *envp = (CPUArchState *)env->env_ptr;
+    for (int i = 0; i < 32; i++) {
+        printf("regs[%d] = %#x\n", i, cpuregs["regs"][i].as<uint32_t>());
+        envp->active_tc.gpr[i] = cpuregs["regs"][i].as<uint32_t>();
+    }
+    printf("Lo = %#x\n", cpuregs["lo"].as<uint32_t>());
+    envp->active_tc.LO[0] = cpuregs["lo"].as<uint32_t>();
+    printf("Hi = %#x\n", cpuregs["hi"].as<uint32_t>());
+    envp->active_tc.HI[0] = cpuregs["hi"].as<uint32_t>();
+    printf("PC = %#x\n", cpuregs["pc"].as<uint32_t>());
+    envp->active_tc.PC = cpuregs["pc"].as<uint32_t>();
+
+    printf("Status = %#x\n", cpuregs["status"].as<uint32_t>());
+    envp->CP0_Status = cpuregs["status"].as<uint32_t>();
+    printf("BadVaddr = %#x\n", cpuregs["badvaddr"].as<uint32_t>());
+    envp->CP0_BadVAddr = cpuregs["badvaddr"].as<uint32_t>();
+    printf("Cause = %#x\n", cpuregs["cause"].as<uint32_t>());
+    envp->CP0_Cause = cpuregs["cause"].as<uint32_t>();
+    if (cpuregs["context"]) {
+    	printf("Context = %#x\n", cpuregs["context"].as<uint32_t>());
+    	envp->CP0_Context = cpuregs["context"].as<uint32_t>();
+    }
+#endif
+
     //LOAD MEM
+    std::vector<const char*> memfiles(pmemfiles, pmemfiles+num);
     for (int i = 0; i < memfiles.size(); i++) {
     FILE *fp_mem;
     unsigned char buf[0x1000];
@@ -188,11 +214,10 @@ void load_states_multi(CPUState *env, const char **pmemfiles, int num, const cha
     }
     fclose(fp_mem);
     }
-#endif
 }
 
 bool init_plugin(void *self) {
-#ifdef TARGET_ARM
+#if defined(TARGET_ARM) || defined(TARGET_MIPS)
     return true;
 #else
     return false;

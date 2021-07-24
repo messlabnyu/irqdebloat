@@ -220,7 +220,7 @@ instr_type disas_block(CPUArchState* env, target_ulong pc, int size) {
         cs_option(handle, CS_OPT_MODE, CS_MODE_ARM);
     }
 
-#elif defined(TARGET_PPC)
+#elif defined(TARGET_PPC) || defined(TARGET_MIPS)
     csh handle = cs_handle_32;
 #endif
 

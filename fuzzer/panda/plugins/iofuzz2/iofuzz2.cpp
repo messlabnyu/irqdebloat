@@ -22,7 +22,10 @@ bool init_plugin(void *);
 void uninit_plugin(void *);
 #include "loadstate/loadstate_ext.h"
 
+#ifdef TARGET_ARM
 extern uint64_t replay_cntpct_base;
+#endif
+
 // sysemu.h has some non-C++-compliant stuff in it :p
 void qemu_system_shutdown_request(void);
 
@@ -704,8 +707,10 @@ bool init_plugin(void *self) {
     consistent_io_prob = panda_parse_double(args, "consistent_io_prob", 0.0);
     use_consistent_io = consistent_io_prob > 0.0;
     long_win = panda_parse_bool(args, "wiiin");
+#ifdef TARGET_ARM
     const char *_cntpct_base = panda_parse_string(args, "cntpct", "0");
     replay_cntpct_base = strtoul(_cntpct_base, NULL, 16);
+#endif
 
     mkdir(outdir, 0755);
 

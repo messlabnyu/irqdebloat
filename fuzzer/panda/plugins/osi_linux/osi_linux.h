@@ -70,6 +70,8 @@
 #define _ESP	((CPUARMState *)((CPUState *)env->env_ptr))->regs[13]
 #elif defined(TARGET_PPC)
 #define _ESP	((CPUPPCState *)((CPUState *)env->env_ptr))->gpr[1]
+#elif defined(TARGET_MIPS)
+#define _ESP	((CPUMIPSState *)((CPUState *)env->env_ptr))->active_tc.gpr[29]
 #else
 #error	"_ESP macro not defined for target architecture."
 #endif

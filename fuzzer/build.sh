@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Get the location of the LLVM compiled for PANDA, respecting environment variables.
-PANDA_LLVM_ROOT="${PANDA_LLVM_ROOT:-$(dirname $0)/../llvm}"
+PANDA_LLVM_ROOT="${PANDA_LLVM_ROOT:-$(dirname $0)/../../llvm}"
 PANDA_LLVM_BUILD="${PANDA_LLVM_BUILD:-Release}"
 PANDA_LLVM="$(/bin/readlink -f "${PANDA_LLVM_ROOT}/${PANDA_LLVM_BUILD}" 2>/dev/null)"
 
@@ -41,13 +41,13 @@ fi
 
 
 export LD_LIBRARY_PATH=${PANDA_LLVM}/lib:$LD_LIBRARY_PATH
-CC=clang CXX=clang++ "$(dirname $0)/configure" \
+CC=clang-8 CXX=clang++-8 "$(dirname $0)/configure" \
     --disable-vhost-net \
     --disable-werror \
-    --target-list=x86_64-softmmu,i386-softmmu,arm-softmmu,ppc-softmmu \
+    --target-list=x86_64-softmmu,i386-softmmu,arm-softmmu,ppc-softmmu,mips-softmmu,mipsel-softmmu \
     --prefix="$(pwd)/install" \
     --python=python2 \
     $LLVM_BIT \
     "$@"
 
-make -j ${PANDA_NPROC:-$(nproc || sysctl -n hw.ncpu)}
+#make -j ${PANDA_NPROC:-$(nproc || sysctl -n hw.ncpu)}

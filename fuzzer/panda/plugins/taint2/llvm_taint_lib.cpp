@@ -62,8 +62,13 @@ PPP_CB_BOILERPLATE(on_ptr_store);
 extern const char *qemu_file;
 
 // Helper methods for doing structure computations.
+#ifdef TARGET_MIPS
+#define cpu_off(member) (uint64_t)(&((CPUArchState *)0)->active_tc.member)
+#define cpu_size(member) sizeof(((CPUArchState *)0)->active_tc.member)
+#else
 #define cpu_off(member) (uint64_t)(&((CPUArchState *)0)->member)
 #define cpu_size(member) sizeof(((CPUArchState *)0)->member)
+#endif
 #define cpu_endoff(member) (cpu_off(member) + cpu_size(member))
 
 #define contains_offset(member) ((signed)cpu_off(member) <= (offset) && (unsigned)(offset) < cpu_endoff(member))
@@ -900,7 +905,7 @@ bool PandaTaintVisitor::getAddr(Value *addrVal, Addr& addrOut) {
         return true;
     }
 
-#if defined (TARGET_PPC) 
+#if defined (TARGET_PPC) || defined (TARGET_MIPS)
     if (contains_offset(gpr)) {
         addrOut.typ = GREG;
         addrOut.val.gr = (offset - cpu_off(gpr)) / cpu_size(gpr[0]);
@@ -963,6 +968,8 @@ void PandaTaintVisitor::insertStateOp(Instruction &I) {
         if (ptrAddr == cpu_off(eip) && isStore) {
 #elif defined(TARGET_PPC)
         if (ptrAddr == cpu_off(nip) && isStore) {
+#elif defined(TARGET_MIPS)
+        if (ptrAddr == cpu_off(PC) && isStore) {
 #else
 #error "unsupported architecture"
 #endif

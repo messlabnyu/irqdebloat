@@ -109,6 +109,9 @@ target_ulong panda_current_asid(CPUState *cpu) {
 #elif defined(TARGET_PPC)
   CPUArchState *env = (CPUArchState *)cpu->env_ptr;
   return env->sr[0];
+#elif defined(TARGET_MIPS)
+  CPUArchState *env = (CPUArchState *)cpu->env_ptr;
+  return env->hflags&MIPS_HFLAG_KSU;
 #else
 #error "panda_current_asid() not implemented for target architecture."
   return 0;
@@ -129,6 +132,8 @@ target_ulong panda_current_sp(CPUState *cpu) {
 #elif defined(TARGET_PPC)
   // R1 on PPC.
   return env->gpr[1];
+#elif defined(TARGET_MIPS)
+  return env->active_tc.gpr[29];
 #else
 #error "panda_current_asid() not implemented for target architecture."
   return 0;
@@ -147,6 +152,8 @@ bool panda_in_kernel(CPUState *cpu) {
     return ((env->uncached_cpsr & CPSR_M) == ARM_CPU_MODE_SVC);
 #elif defined(TARGET_PPC)
     return msr_pr;
+#elif defined(TARGET_MIPS)
+    return env->hflags&(MIPS_HFLAG_KM|MIPS_HFLAG_SM);
 #else
 #error "panda_in_kernel() not implemented for target architecture."
     return false;
