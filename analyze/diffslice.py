@@ -302,6 +302,10 @@ class DiffSliceAnalyzer(object):
         bv.update_analysis_and_wait()
         return bv
 
+    def log_status(self, outdir, msg):
+        with open(os.path.join(outdir, "status"), 'w') as fd:
+            fd.write(msg)
+
     def bn_analyze(self, bv, raw_traces, outdir, mcore=False):
         postdom_out = {}
         final_traces = {}
@@ -328,10 +332,12 @@ class DiffSliceAnalyzer(object):
             print("Processing : " + trace['dir'])
             if PERF:
                 tstart = time.clock()
+            self.log_status(outdir, "get_return_blocks : " + trace['dir'])
             grouped_traces, raw_trace = get_return_blocks(return_blocks, bv, raw_trace=trace, vm=self.mm, perf=PERF)
             if PERF:
                 print("get_return_blocks done: {}".format(time.clock()-tstart))
                 tstart = time.clock()
+            self.log_status(outdir, "output_postdominators : " + trace['dir'])
             output_postdominators(return_blocks, postdom_out)
             if PERF:
                 print("output_postdominators done: {}".format(time.clock()-tstart))
@@ -340,13 +346,16 @@ class DiffSliceAnalyzer(object):
             print("Re-Processing trace : " + trace['dir'])
             if PERF:
                 tstart = time.clock()
+            self.log_status(outdir, "reprocess_trace : " + trace['dir'])
             trace_out[os.path.abspath(trace['dir'])] = reprocess_trace(bv, translated_trace[trace['dir']], return_blocks, postdom_out)
             if PERF:
                 print("reprocess_trace done: {}".format(time.clock()-tstart))
 
+        self.log_status(outdir, "find_immediate_postdominator")
         immediate_postdoms = find_immediate_postdominator(postdom_out)
         for log,trace in trace_out.iteritems():
             final_traces[log] = []
+            self.log_status(outdir, "logging : " + log)
             for tr in trace:
                 # make sure any trace inside of a basicblock is marked -1
                 if tr[0] != tr[3]:
