@@ -4,6 +4,7 @@ import json
 import time
 import itertools
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'instrument'))
 from instrument import vm
 
 from extract_postdominators import *
@@ -50,17 +51,17 @@ class DiffSliceAnalyzer(object):
             else:
                 sim_ei = [(x[0], x[1]) for x in es[sim_id]]
             if DEBUG and DEBUG_SIM:
-                print "-------- simulate ------------"
-                print [(hex(x[0]), hex(x[1])) for x in sim_ei]
-                print [(hex(x[0]), hex(x[1])) for x in es[chk_id]]
+                print("-------- simulate ------------")
+                print([(hex(x[0]), hex(x[1])) for x in sim_ei])
+                print([(hex(x[0]), hex(x[1])) for x in es[chk_id]])
             sim_vpc = pc[sim_id]
             while sim_ei != es[chk_id] and sim_vpc < len(tr[sim_id]):
                 sim_vpc += 1
                 if sim_vpc < len(tr[sim_id]):
                     updateei(sim_ei, iaddr(tr[sim_id], sim_vpc), ipdom(tr[sim_id], sim_vpc))
                     if DEBUG and DEBUG_SIM:
-                        print " > ", hex(iaddr(tr[sim_id], sim_vpc)), " : ", [(hex(x[0]), hex(x[1])) for x in sim_ei]
-                        print " > ", [(hex(x[0]), hex(x[1])) for x in es[chk_id]]
+                        print(" > ", hex(iaddr(tr[sim_id], sim_vpc)), " : ", [(hex(x[0]), hex(x[1])) for x in sim_ei])
+                        print(" > ", [(hex(x[0]), hex(x[1])) for x in es[chk_id]])
             # check sim failed
             if sim_ei != es[chk_id] or sim_vpc == len(tr[sim_id]):
                 return None
@@ -82,16 +83,16 @@ class DiffSliceAnalyzer(object):
                     proceed(traces, vpc, ei, 0)
                     proceed(traces, vpc, ei, 1)
             if DEBUG:
-                print "EI Miss match"
-                print [(hex(x[0]),hex(x[1])) for x in ei[0]], [(hex(x[0]),hex(x[1])) for x in ei[1]]
+                print("EI Miss match")
+                print([(hex(x[0]),hex(x[1])) for x in ei[0]], [(hex(x[0]),hex(x[1])) for x in ei[1]])
                 if vpc[0] < len(traces[0]):
-                    print hex(iaddr(traces[0], vpc[0])), vpc[0],
+                    print(hex(iaddr(traces[0], vpc[0])), vpc[0], end="")
                 else:
-                    print "None",
+                    print("None", end="")
                 if vpc[1] < len(traces[1]):
-                    print hex(iaddr(traces[1], vpc[1])), vpc[1]
+                    print(hex(iaddr(traces[1], vpc[1])), vpc[1])
                 else:
-                    print "None"
+                    print("None")
             # log EI stack
             if logEI and not endoftrace(vpc, traces):
                 ei_index = min(len(ei[0]), len(ei[1]))
@@ -104,7 +105,7 @@ class DiffSliceAnalyzer(object):
                     sim0 = simulate_ei_check(0, 1, traces, ei, vpc)
                     sim1 = simulate_ei_check(1, 0, traces, ei, vpc)
                     if DEBUG:
-                        print "debug sim0 ", sim0, " sim1 ", sim1
+                        print("debug sim0 ", sim0, " sim1 ", sim1)
                 else:
                     sim0 = None
                     sim1 = None
@@ -134,7 +135,7 @@ class DiffSliceAnalyzer(object):
                         sim0 = simulate_ei_check(0, 1, traces, ei, vpc)
                         sim1 = simulate_ei_check(1, 0, traces, ei, vpc)
                         if DEBUG:
-                            print "debug sim0 ", sim0, " sim1 ", sim1
+                            print("debug sim0 ", sim0, " sim1 ", sim1)
                     else:
                         sim0 = None
                         sim1 = None
@@ -160,9 +161,9 @@ class DiffSliceAnalyzer(object):
                     # Also check the possiblity of walking the short EI stack up till match
                     sim = simulate_ei_check(1-disalign, disalign, traces, ei, vpc)
                     if DEBUG:
-                        print "sim disalign", sim, vpc[1-disalign], 1-disalign, vpc[disalign], disalign
-                        print [(hex(x[0]), hex(x[1])) for x in ei[1-disalign]]
-                        print [(hex(x[0]), hex(x[1])) for x in ei[disalign]]
+                        print("sim disalign", sim, vpc[1-disalign], 1-disalign, vpc[disalign], disalign)
+                        print([(hex(x[0]), hex(x[1])) for x in ei[1-disalign]])
+                        print([(hex(x[0]), hex(x[1])) for x in ei[disalign]])
                     if sim and favorbigei:
                         while sim[0] != vpc[1-disalign] and not endoftrace(vpc, traces):
                             proceed(traces, vpc, ei, 1-disalign)
@@ -170,20 +171,20 @@ class DiffSliceAnalyzer(object):
                         while len(ei[disalign]) > len(ei[1 - disalign]) and not endoftrace(vpc, traces):
                             proceed(traces, vpc, ei, disalign)
                     if DEBUG:
-                        print "walk disalign", vpc[1-disalign], 1-disalign, vpc[disalign], disalign
-                        print [(hex(x[0]), hex(x[1])) for x in ei[1-disalign]]
-                        print [(hex(x[0]), hex(x[1])) for x in ei[disalign]]
+                        print("walk disalign", vpc[1-disalign], 1-disalign, vpc[disalign], disalign)
+                        print([(hex(x[0]), hex(x[1])) for x in ei[1-disalign]])
+                        print([(hex(x[0]), hex(x[1])) for x in ei[disalign]])
             if DEBUG:
-                print "EI Realign"
-                print [(hex(x[0]),hex(x[1])) for x in ei[0]], [(hex(x[0]),hex(x[1])) for x in ei[1]]
+                print("EI Realign")
+                print([(hex(x[0]),hex(x[1])) for x in ei[0]], [(hex(x[0]),hex(x[1])) for x in ei[1]])
                 if vpc[0] < len(traces[0]):
-                    print hex(iaddr(traces[0], vpc[0])),
+                    print(hex(iaddr(traces[0], vpc[0])), end="")
                 else:
-                    print "None",
+                    print("None", end="")
                 if vpc[1] < len(traces[1]):
-                    print hex(iaddr(traces[1], vpc[1]))
+                    print(hex(iaddr(traces[1], vpc[1])))
                 else:
-                    print "None"
+                    print("None")
 
         # output divergence point
         branch_targets = set()
@@ -234,7 +235,7 @@ class DiffSliceAnalyzer(object):
 
         # Fail safe if the trace is empty
         if (not tracedb['wanted']) or (not tracedb['toremove']):
-            print "Cannot perform Diff-Analysis: Traces Incomplete"
+            print("Cannot perform Diff-Analysis: Traces Incomplete")
             return
 
         branch_targets = set()
@@ -242,7 +243,7 @@ class DiffSliceAnalyzer(object):
         # start trace alignment
         for trace_wanted, trace_toremove in itertools.product(tracedb['wanted'], tracedb['toremove']):
             diverge, aligned, targets = self.diff(trace_wanted, trace_toremove)
-            print [hex(x) for x in diverge]
+            print([hex(x) for x in diverge])
             diverge_points.update(diverge)
             branch_targets.update(targets)
 
@@ -251,12 +252,12 @@ class DiffSliceAnalyzer(object):
         # the divergence points inside each `wanted` traces.
         for tr1, tr2 in itertools.combinations(tracedb['wanted'], 2):
             diverge, aligned, _ = self.diff(tr1, tr2)
-            print [hex(x) for x in diverge]
+            print([hex(x) for x in diverge])
             diverge_points.difference_update(diverge)
 
-        print diverge_points
+        print(diverge_points)
         patch_points = set([pt[1] for pt in branch_targets if pt[0] in diverge_points])
-        print patch_points
+        print(patch_points)
         with open(self.outputFile("patch.json"), 'w') as fd:
             json.dump({'locations': [pt for pt in patch_points]}, fd)
 
@@ -353,7 +354,7 @@ class DiffSliceAnalyzer(object):
 
         self.log_status(outdir, "find_immediate_postdominator")
         immediate_postdoms = find_immediate_postdominator(postdom_out)
-        for log,trace in trace_out.iteritems():
+        for log,trace in trace_out.items():
             final_traces[log] = []
             self.log_status(outdir, "logging : " + log)
             for tr in trace:
@@ -366,7 +367,7 @@ class DiffSliceAnalyzer(object):
                 else:
                     # for incomplete traces, the last few blocks might ended up wrong post-doms
                     if DEBUG:
-                        print "failed: ", hex(tr[0]), hex(tr[4]), hex(tr[2]), hex(tr[3]), hex(tr[1].start)
+                        print("failed: ", hex(tr[0]), hex(tr[4]), hex(tr[2]), hex(tr[3]), hex(tr[1].start))
                     #for x in immediate_postdoms[tr[1]]:
                     #    print hex(x), ":", [hex(xx) for xx in immediate_postdoms[tr[1]][x]]
                     final_traces[log].append([tr[0], tr[2], tr[4], tr[1].start, -1])
@@ -408,7 +409,7 @@ class DiffSliceAnalyzer(object):
                     outdir,
                     {'trace': final_traces[tr_x], 'id': idx},
                     {'trace': final_traces[tr_y], 'id': idy})
-            print [[hex(x) for x in xl] for xl in diverge]
+            print([[hex(x) for x in xl] for xl in diverge])
             diverge_points.difference_update(diverge)
             branch_targets.update(targets)
 
@@ -422,5 +423,5 @@ class DiffSliceAnalyzer(object):
                         jout['target'][xl[0]] = []
                     jout['target'][xl[0]] = [e for e in set(list(xl[1:]) + jout['target'][xl[0]])]
                 json.dump(jout, fd)
-                print [[hex(x) for x in xl] for xl in branch_targets]
+                print([[hex(x) for x in xl] for xl in branch_targets])
 

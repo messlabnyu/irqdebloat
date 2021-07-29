@@ -157,13 +157,13 @@ def preproc_traces(trdirs):
                         # skip invalid traces
                         if "Stopped execution of TB chain" in normtr:
                             continue
-                tag = hashlib.sha1(normtr).hexdigest()
+                tag = hashlib.sha1(normtr.encode('latin-1')).hexdigest()
                 if tag in trace_buckets:
                     trace_buckets[tag].update(trpath)
                 else:
                     trace_buckets[tag] = TraceBucket(trpath)
 
-    for h,tb in trace_buckets.iteritems():
+    for h,tb in trace_buckets.items():
         if tb.count()>1:
             print(h)
             print(tb.traces)
@@ -293,11 +293,11 @@ def diff_mc(membase=0, arch='armv7'):
     # preprocess
     pool = [multiprocessing.Process(target=anal_mc, args=(regfile, memfile, traces_list[i], outs[i], membase, arch)) \
             for i in range(NPROC)]
-    map(lambda x: x.start(), pool)
+    list(map(lambda x: x.start(), pool))
     traceindex = NPROC
-    while True in map(lambda x: x.is_alive(), pool):
+    while True in list(map(lambda x: x.is_alive(), pool)):
         time.sleep(60)
-        print "Prep: ", map(lambda x: x.is_alive(), pool)
+        print("Prep: ", list(map(lambda x: x.is_alive(), pool)))
         for i in range(NPROC):
             if not pool[i].is_alive() and traceindex < BATCH:
                 pool[i] = multiprocessing.Process( \
@@ -326,10 +326,10 @@ def diff_mc(membase=0, arch='armv7'):
         diffsets[counter%NPROC].append((tr_x, tr_y))
         counter += 1
     pool = [multiprocessing.Process(target=diffhand_mc, args=(diffsets[i], diffdir)) for i in range(NPROC)]
-    map(lambda x: x.start(), pool)
-    while True in map(lambda x: x.is_alive(), pool):
+    list(map(lambda x: x.start(), pool))
+    while True in list(map(lambda x: x.is_alive(), pool)):
         time.sleep(60)
-        print "Diff: ", map(lambda x: x.is_alive(), pool)
+        print("Diff: ", list(map(lambda x: x.is_alive(), pool)))
 
 def get_membase(tag):
     if tag in ["beagle", "romulus"]:

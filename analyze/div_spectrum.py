@@ -56,11 +56,11 @@ ddlist = [outdir]
 mmap = anal.mm.walk()
 
 def getva(pa):
-    va = None
+    va = []
     for v, p, sz, _ in mmap:
         if pa&(~(sz-1)) == p-anal.mm.cpu._physical_mem_base:
             #assert (not va)
-            va = v+(pa&(sz-1))
+            va.append(v+(pa&(sz-1)))
     #assert(va)
     return va
 
@@ -216,25 +216,25 @@ alltargets = set()
 sl.sort(key=lambda x: x[1])
 for x,y in sl:
     # Original Diff result (contains divergence points in inferred shadow basic blocks)
-    tgs = set([(hex(d), hex(getva(d))) for d in diverge_targets[str(x)] if d in glob_functions])
+    tgs = set([d for d in diverge_targets[str(x)] if d in glob_functions])
     alltargets.update([d for d in diverge_targets[str(x)] if d in glob_functions])
     if x in glob_indbr:
         divp = x
     else:
         divp = min([d for d in glob_indbr if d >= x])
     # Update from real traces which contains Shared IRQ handlers
-    tgs.update([(hex(d), hex(getva(d))) for d in glob_indbr[divp] if d in glob_functions])
+    tgs.update([d for d in glob_indbr[divp] if d in glob_functions])
     alltargets.update([d for d in glob_indbr[divp] if d in glob_functions])
     if tgs:
         if len(bpmap[x]) > 1:
-            print hex(x), hex(getva(x)), y, math.sqrt(sum([(c-y)**2 for c in bpmap[x]])/(len(bpmap[x])-1)), tgs
+            print(hex(x), [hex(va) for va in getva(x)], y, math.sqrt(sum([(c-y)**2 for c in bpmap[x]])/(len(bpmap[x])-1)), [(hex(tg), [hex(va) for va in getva(tg)]) for tg in tgs])
         else:
-            print hex(x), hex(getva(x)), y, 0, tgs
+            print(hex(x), [hex(va) for va in getva(x)], y, 0, [(hex(tg), [hex(va) for va in getva(tg)]) for tg in tgs])
 
-#print [hex(getva(int(x))) for x in diverge_targets.keys()]
+#print [[hex(va) for va in getva(int(x))] for x in diverge_targets.keys()]
 pbp = [anal.mm.translate(v) - anal.mm.cpu._physical_mem_base for v in bp]
 for p in pbp:
     print("DEBUG", hex(p))
     if p in alltargets:
         print(hex(p))
-print "False Positives: ", [(hex(d), hex(getva(d))) for d in alltargets if d not in pbp]
+print("False Positives: ", [(hex(d), [hex(va) for va in getva(d)]) for d in alltargets if d not in pbp])

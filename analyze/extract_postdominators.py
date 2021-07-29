@@ -23,7 +23,7 @@ def wait(bv):
     # Analyzing
     while bv.analysis_progress.state != AnalysisState.IdleState:
         time.sleep(1)
-        print bv.analysis_progress
+        print(bv.analysis_progress)
 
 def wait_analyze(bv, func):
     func.reanalyze()
@@ -54,7 +54,7 @@ def fix_switch_table(bv, mal_func):
                             switch_tab = token.value
                             break
                 if switch_tab:
-                    print "Found Switch Table at {}".format(hex(switch_tab))
+                    print("Found Switch Table at {}".format(hex(switch_tab)))
                     i = 0
                     # read jump table data
                     while True:
@@ -243,7 +243,7 @@ def get_return_blocks(return_block_map, bv, raw_trace=None, tracefile=None, merg
                     return_block_map[fun] = []
                     for tf in target_funcs:
                         return_block_map[fun] += return_block_map[tf]
-                    print "Resolved function:", fun.name, return_block_map[fun]
+                    print("Resolved function:", fun.name, return_block_map[fun])
     # NOTE(hzh): make the last basic block in the trace the return block - in case that might called `exit` directly
     # This might also involve some of the inline functions - IDed as function but inlined in asm
     for fun in final_traces.keys():
@@ -255,11 +255,11 @@ def get_return_blocks(return_block_map, bv, raw_trace=None, tracefile=None, merg
                     if basic_block.start not in [x.start for x in return_block_map[fun]]:
                         return_block_map[fun].append(basic_block)
                 if DEBUG:
-                    print "Truncated function:", fun.name, return_block_map[fun]
+                    print("Truncated function:", fun.name, return_block_map[fun])
     for fun in final_traces.keys():
         if fun not in return_block_map:
             if DEBUG:
-                print "Err function:", fun.name, [[hex(addr) for addr in addrs] for addrs in final_traces[fun]]
+                print("Err function:", fun.name, [[hex(addr) for addr in addrs] for addrs in final_traces[fun]])
             return_block_map[fun] = []
             addrs = sum(final_traces[fun], [])
             addrs.sort()
@@ -434,8 +434,8 @@ def reprocess_trace(bv, raw_trace, return_blocks, postdom_out):
         functions = bv.get_functions_containing(instaddr)
         callstack_size = len(prev_func)
         if DEBUG:
-            print hex(instaddr), " : ", functions
-            print prev_func
+            print(hex(instaddr), " : ", functions)
+            print(prev_func)
 
         # check if we are at the return addr of the prev_func
         if prev_func:
@@ -466,8 +466,8 @@ def reprocess_trace(bv, raw_trace, return_blocks, postdom_out):
             func = func_checklist.pop()
             ret_block = func.get_basic_block_at(instaddr)
         if DEBUG:
-            print return_blocks[func]
-            print ret_block
+            print(return_blocks[func])
+            print(ret_block)
 
         # initialize
         if not prev_func:
@@ -559,7 +559,7 @@ def reprocess_trace(bv, raw_trace, return_blocks, postdom_out):
 
 
         if (instr_counter % 10000) == 0:
-            print "Re-Processed {COUNT}/{TOTAL}".format(COUNT=instr_counter, TOTAL=len(raw_trace['va']))
+            print("Re-Processed {COUNT}/{TOTAL}".format(COUNT=instr_counter, TOTAL=len(raw_trace['va'])))
 
         if shadow_instr and shadow_instr == instaddr:
             shadow_instr = None
@@ -576,11 +576,11 @@ def reprocess_trace(bv, raw_trace, return_blocks, postdom_out):
     if DEBUG:
         for inst in scanning_trace:
             if inst and inst[2]:
-                print hex(inst[0]), inst[1].name, inst[2]
+                print(hex(inst[0]), inst[1].name, inst[2])
             elif inst:
-                print hex(inst[0]), inst[1].name, inst[2]
+                print(hex(inst[0]), inst[1].name, inst[2])
             else:
-                print inst
+                print(inst)
     # walk through the trace again to make sure every inst has a return block tagged
     # e.g.
     #   In this case, the return block of `read` is actually in `__read_nocancel`
@@ -617,7 +617,7 @@ def reprocess_trace(bv, raw_trace, return_blocks, postdom_out):
             if prev_frame[-1][0].start == inst[0]:
                 prev_frame = prev_frame[:-1]
             if DEBUG:
-                print "Fixing {INST}, {FUNC}, ret: {ORIGBB} => {BB}".format(INST=hex(inst[0]), FUNC=inst[1].name, ORIGBB=hex(origretb.start) if origretb else None, BB=hex(inst[2]))
+                print("Fixing {INST}, {FUNC}, ret: {ORIGBB} => {BB}".format(INST=hex(inst[0]), FUNC=inst[1].name, ORIGBB=hex(origretb.start) if origretb else None, BB=hex(inst[2])))
         assert(inst == None or inst[2] != None)
     return [[tr[0], tr[1], tr[2], tr[3], tr[4]] for tr in scanning_trace if tr]
 
@@ -642,7 +642,7 @@ def find_immediate_postdominator(postdoms):
     for func, retblock in postdoms:
         for bb in postdoms[(func, retblock)]:
             if bb not in result[func][retblock]:
-                print "MISSING Immediate Postdominator ", func, hex(retblock), hex(bb)
+                print("MISSING Immediate Postdominator ", func, hex(retblock), hex(bb))
 
     return result
 
