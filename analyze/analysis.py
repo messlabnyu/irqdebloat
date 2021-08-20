@@ -157,7 +157,8 @@ def preproc_traces(trdirs):
                         # skip invalid traces
                         if "Stopped execution of TB chain" in normtr:
                             continue
-                tag = hashlib.sha1(normtr.encode('latin-1')).hexdigest()
+                    normtr = normtr.encode('latin-1')
+                tag = hashlib.sha1(normtr).hexdigest()
                 if tag in trace_buckets:
                     trace_buckets[tag].update(trpath)
                 else:

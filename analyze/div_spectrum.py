@@ -121,7 +121,7 @@ for dd in ddlist:
 glob_indbr = {}
 bpmap = {}
 for x in diverge_targets:
-    #print(x, [hex(a) for a in diverge_targets[x]])
+    #print("Div: ", hex(int(x)), [hex(a) for a in diverge_targets[x]])
     bpmap[int(x)] = []
 
 raw_traces = {}
@@ -192,7 +192,7 @@ for x in gindlist:
         glob_indbr[sec.pop()].update(v)
 print("all indirect calls: ", len(glob_indbr))
 #for x in glob_indbr:
-#    print hex(x), [hex(d) for d in glob_indbr[x] if d in glob_functions]
+#    print(hex(x), [hex(d) for d in glob_indbr[x] if d in glob_functions])
 
 # Div Points Indirect Calls
 pp = pprint.PrettyPrinter(indent=4)
