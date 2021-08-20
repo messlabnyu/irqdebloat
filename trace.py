@@ -10,7 +10,7 @@ DIR = os.path.dirname(os.path.abspath(os.path.realpath(__file__)))
 ENV = {"LD_LIBRARY_PATH": os.path.join(DIR, "llvm/lib")}
 NPROC = 200
 
-def build_cmd(ostag, out, reg, mem, index=None, replay=None, iolist=None, nullpad=True,compact=False,cntpct=0):
+def build_cmd(ostag, out, reg, mem, index=None, replay=None, iolist=None, nullpad=True,compact=False,cntpct=0,timebounded=0,persist=False):
     if index != None:
         outdir = os.path.join(DIR, out, "qemu_"+str(index))
     else:
@@ -57,7 +57,11 @@ def build_cmd(ostag, out, reg, mem, index=None, replay=None, iolist=None, nullpa
                     ]
         else:
             enum_args = [
-                    'enuml1', f'l1={"|".join([hex((1<<i)&0xffffffff)[2:] for i in range(33)])}',
+                    #'enuml1', f'l1={"|".join([hex((1<<i)&0xffffffff)[2:] for i in range(33)])}',
+                    #'enuml1', f'l1={"|".join([hex(i)[2:] for i in range(256)])}',
+                    'enuml1', 'l1=23|2f',
+                    'enuml2', 'l2=0',
+                    'enuml3', f'l3={"|".join([hex((1<<i)&0xffffffff)[2:] for i in range(33)])}',
                     #'enuml2',
                     #'enuml3',
                     ]
@@ -81,13 +85,21 @@ def build_cmd(ostag, out, reg, mem, index=None, replay=None, iolist=None, nullpa
         ioargs.append('clearirq')
     if ostag == "steamlink":
         nullpad = False
+        #timebounded = 2*1000    # 1 seconds
+        #persist = True
+    if ostag == "wrt":
+        nullpad = False
     if nullpad:
         ioargs.append('null')
     if compact:
         ioargs.extend(['pack', 'dedup'])
+    if persist:
+        ioargs.append('persist')
     if iolist:
         ioargs.append(f'iolist={iolist}')
     #ioargs.append('debug')
+    if timebounded != 0:
+        ioargs.append(f'timebounded={timebounded}')
 
     cmd = [os.path.join(DIR, f"fuzzer/build/{arch}-softmmu/qemu-system-{arch}"),
             '-machine', f'rehosting,mem-map=MEM {memrange}',
@@ -168,5 +180,5 @@ if __name__ == "__main__":
 
     # Ensure that RaspberryPi Linux emulation has CNTPCT (emulated coprocessor) no less than the stored counter value to avoid (infinite) loops while irq_enter
     # The stored counter value is reverse engineered through (timekeeper_advance)arch_counter_get_cntpct, mm._read_word(mm.translate(0x80DC0828))
-    debug(args.ostag, outdir, reg, mem, replay=args.replay, iolist=args.iolist, cntpct=0x31186096)
-    #mc(args.ostag, outdir, reg, mem, replaydir=args.replay, iolist=args.iolist, cntpct=0x31186096)
+    #debug(args.ostag, outdir, reg, mem, replay=args.replay, iolist=args.iolist, cntpct=0x31186096)
+    mc(args.ostag, outdir, reg, mem, replaydir=args.replay, iolist=args.iolist, cntpct=0x31186096)

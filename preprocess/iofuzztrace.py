@@ -85,7 +85,7 @@ for i in traces:
         continue
     with open(os.path.join(outdir, 'trace_{}'.format(str(i))), 'w') as fd:
         fd.write("cpu mode: 13, prev: 12\n")
-        fd.write("\n".join([":"+hex(a) for a in traces[i]]))
+        fd.write("\n".join(["Trace :"+hex(a) for a in traces[i]]))
 # output iovals
 #for i in iovals:
 #    with open(os.path.join(outdir, 'iovals_{}'.format(str(i))), 'w') as fd:

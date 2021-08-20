@@ -56,6 +56,8 @@ static std::vector<target_ulong> trace_seq;
 static bool log_compact = 0;
 static std::set<target_ulong> timer_io;
 
+bool persist = false;
+uint32_t timebounded = 0;
 bool clear_irq = false;
 bool quickdedup = false;
 bool compact_output = false;
@@ -98,6 +100,61 @@ static std::vector<gchar*> ioseq;
 static std::vector<uint32_t> mips_ipvec;
 static uint32_t mips_ipidx = 0;
 #endif
+
+static void check_exit(CPUState *cpu, int err) {
+    if (!timebounded)
+        exit(err);
+    if (persist) {
+        if (qemu_clock_get_ms(QEMU_CLOCK_REALTIME) - start_time > MAX_TRACE_TIMER_MS) {
+            exit(err);
+        } else if (qemu_clock_get_ms(QEMU_CLOCK_REALTIME) - prev_run_time > timebounded) {
+            cpu->interrupt_request = 1;
+            start_new_irq = HWIRQ_FUZZ_TRY;
+            if (enum_l1 && l1index == l1_nums.size()) {
+                l1cycle = 0;
+                l1index = 0;
+                l1cycle_updated = false;
+            }
+            if (enum_l2 && l2index == l2_nums.size()) {
+                l1cycle = 0;
+                l1index = 0;
+                l1cycle_updated = false;
+                l2cycle = 0;
+                l2index = 0;
+                l2cycle_updated = false;
+            }
+            if (enum_l3 && l3index == l3_nums.size()) {
+                l1cycle = 0;
+                l1index = 0;
+                l1cycle_updated = false;
+                l2cycle = 0;
+                l2index = 0;
+                l2cycle_updated = false;
+                l3cycle = 0;
+                l3index = 0;
+                l3cycle_updated = false;
+            }
+            if (enum_l4 && l4index == l4_nums.size()) {
+                l1cycle = 0;
+                l1index = 0;
+                l1cycle_updated = false;
+                l2cycle = 0;
+                l2index = 0;
+                l2cycle_updated = false;
+                l3cycle = 0;
+                l3index = 0;
+                l3cycle_updated = false;
+                l4cycle = 0;
+                l4index = 0;
+                l4cycle_updated = false;
+            }
+            if (!replay_ioseqs.empty() && replay_line == replay_ioseqs.size())
+                replay_line = 0;
+        }
+        return;
+    }
+    exit(err);
+}
 
 #ifdef TARGET_ARM
 #define LOG_IO_TRACE \
@@ -251,14 +308,14 @@ static void ioread(CPUState *env, target_ulong pc, hwaddr addr, uint32_t size, u
     LOG_IO_TRACE
 }
 
-void check_replay_status() {
+void check_replay_status(CPUState *env) {
     if (init_calibrate && irq_rounds <= TIMER_IRQ_ROUNDS)
         return;
     if (!replay_ioseqs.empty()) {
         replay_line++;
         replay_index = 0;
         if (replay_line == replay_ioseqs.size())
-            exit(0);
+            check_exit(env,0);
     }
 }
 
@@ -352,6 +409,27 @@ static bool before_block_exec_invalidate_opt(CPUState *cpu, TranslationBlock *tb
     num_blocks++;
     //CPUArchState *c = (CPUArchState *)cpu->env_ptr;
     //fprintf(stderr, "DEBUG bb exec %x[%lld:%x]\n", c->regs[15], num_blocks, c->uncached_cpsr&CPSR_M);
+    if (persist && timebounded) {
+        if (qemu_clock_get_ms(QEMU_CLOCK_REALTIME) - prev_run_time > timebounded) {
+            prev_run_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
+            cpu->interrupt_request = 1;
+            num_blocks = 0;
+            irq_rounds = 0;
+        }
+        check_exit(cpu,0);
+        return false;
+    }
+    if (timebounded && qemu_clock_get_ms(QEMU_CLOCK_REALTIME) - prev_run_time > timebounded) {
+        prev_run_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
+        panda_exit_loop = true;
+        qemu_loglevel = 0;
+        log_compact = 0;
+        num_blocks = 0;
+        irq_rounds = 0;
+        check_replay_status(cpu);
+        reset_machine = true;
+        return true;
+    }
     if (limit_trace && (qemu_loglevel || !trace_seq.empty()) && num_blocks > MAX_BLOCKS) {
         panda_exit_loop = true;
         printf("Truncate Trace (max block number exceeded)\n");
@@ -359,7 +437,7 @@ static bool before_block_exec_invalidate_opt(CPUState *cpu, TranslationBlock *tb
         log_compact = 0;
         num_blocks = 0;
         irq_rounds = 0;
-        check_replay_status();
+        check_replay_status(cpu);
         reset_machine = true;
         return true;
     }
@@ -470,33 +548,33 @@ static int before_block_exec(CPUState *env, TranslationBlock *tb) {
                 if (!enum_l1 && !enum_l2 && !enum_l3 && !enum_l4) {
                     if (qemu_clock_get_ms(QEMU_CLOCK_REALTIME) - start_time > MAX_TRACE_TIMER_MS) {
                         printf("Done with ioreplay (max time %d ms)\n", MAX_TRACE_TIMER_MS);
-                        exit(0);
+                        check_exit(env,0);
                     }
                 } else if (enum_l4) {   // l4 cycle detection in the highest priority
                     if (l4cycle) {
                         printf("Done l4 irq replay\n");
-                        exit(0);
+                        check_exit(env,0);
                     } else if (l2_nums.size() == 0 or l3_nums.size() == 0) {
                         printf("l4: l2/3 empty\n");
-                        exit(0);
+                        check_exit(env,0);
                     }
                 } else if (enum_l3) {
                     if (l3cycle) {
                         printf("Done l3 irq replay\n");
-                        exit(0);
+                        check_exit(env,0);
                     } else if (l2_nums.size() == 0) {
                         printf("l3: l2 empty\n");
-                        exit(0);
+                        check_exit(env,0);
                     }
                 } else if (enum_l2) {
                     if (l2cycle) {
                         printf("Done l2 irq replay\n");
-                        exit(0);
+                        check_exit(env,0);
                     }
                 } else if (enum_l1) {
                     if (l1cycle) {
                         printf("Done l1 irq replay\n");
-                        exit(0);
+                        check_exit(env,0);
                     }
                 }
             }
@@ -524,7 +602,7 @@ static int before_block_exec(CPUState *env, TranslationBlock *tb) {
             if (nosvc) {
                 if (cpu_mode == ARM_CPU_MODE_IRQ) {
                     track_dead_ioread();
-                    check_replay_status();
+                    check_replay_status(env);
                     start_new_irq = HWIRQ_FUZZ_TRY;
                     irq_rounds++;
                     if (clear_irq)
@@ -536,7 +614,7 @@ static int before_block_exec(CPUState *env, TranslationBlock *tb) {
             } else {
                 if (cpu_mode == ARM_CPU_MODE_SVC && prev_cpu_mode == ARM_CPU_MODE_IRQ) {
                     track_dead_ioread();
-                    check_replay_status();
+                    check_replay_status(env);
                     start_new_irq = HWIRQ_FUZZ_TRY;
                     irq_rounds++;
                     if (clear_irq)
@@ -548,7 +626,7 @@ static int before_block_exec(CPUState *env, TranslationBlock *tb) {
             }
 #elif defined (TARGET_MIPS)
             track_dead_ioread();
-            check_replay_status();
+            check_replay_status(env);
             start_new_irq = HWIRQ_FUZZ_TRY;
             if (clear_irq) {
                 env->interrupt_request = 0;
@@ -706,6 +784,9 @@ bool init_plugin(void *self) {
     if (_timer_io_list[0])
         load_timer_io(_timer_io_list);
     clear_irq = panda_parse_bool(args, "clearirq");
+    const char *timebounded_str = panda_parse_string(args, "timebounded", "0");
+    timebounded = strtoul(timebounded_str, NULL, 10);
+    persist = panda_parse_bool(args, "persist");
 #ifdef TARGET_ARM
     const char *_cntpct_base = panda_parse_string(args, "cntpct", "0");
     replay_cntpct_base = strtoul(_cntpct_base, NULL, 16);
