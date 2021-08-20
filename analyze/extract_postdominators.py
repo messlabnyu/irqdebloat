@@ -452,7 +452,7 @@ def reprocess_trace(bv, raw_trace, return_blocks, postdom_out):
                 prev_func = prev_func[:eos]
 
         # use previous seen function
-        if len(set(functions)) > 1:
+        if prev_func and len(set(functions)) > 1:
             func = prev_func[-1][0] if prev_func[-1][0] in functions else cur_function
         else:   # len(set(functions)) == 1
             func = functions[0]

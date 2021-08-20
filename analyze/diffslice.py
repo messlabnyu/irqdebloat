@@ -38,7 +38,10 @@ class DiffSliceAnalyzer(object):
             while ei and ei[-1][0] == pc:
                 ei.pop()
             if ipd and pc != ipd:
-                ei.append((ipd, pc))
+                # deduplicate common EI, so that we won't mess around with EI stack size
+                # NOTE(!!): This change may or may not break some successful testcases.
+                if not ei or ei[-1] != (ipd, pc):
+                    ei.append((ipd, pc))
         def inbasicblock(tr, pc):
             return not ipdom(tr[0], pc[0]) and not ipdom(tr[1], pc[1])
         def proceed(tr, pc, es, i):
