@@ -107,6 +107,7 @@ size_t execs = 0;
 uint32_t nr_cpu = 16;
 bool fiq = false;
 bool long_win = false;
+bool seen_irq = false;
 
 #ifndef TARGET_ARM
 #define CPU_INTERRUPT_FIQ 0
@@ -483,6 +484,7 @@ static int before_block_exec(CPUState *env, TranslationBlock *tb) {
         static int blocks_after_irq = -1;
         if (tb->pc == vbase+0x18) blocks_after_irq = 0;
         if (blocks_after_irq != -1) {
+            seen_irq = true;
             if (blocks_after_irq < 10) blocks_after_irq++;
             else {
                 env->interrupt_request = 0;
@@ -654,7 +656,7 @@ static void ioread(CPUState *env, target_ulong pc, hwaddr addr, uint32_t size, u
     }
 
     if (fd == -1) fd = open("/dev/urandom", O_RDONLY);
-    if (cur_ioval >= num_iovals) {
+    if (cur_ioval >= num_iovals || !seen_irq) {
         // Randomly do either (1 << i) or a true random value
         int coinflip = randint(2);
         if (coinflip) {
@@ -675,9 +677,9 @@ static void ioread(CPUState *env, target_ulong pc, hwaddr addr, uint32_t size, u
         fuzz = iovals[cur_ioval++];
         //dbgprintf("IOMEM_READ %u %lx %" PRIx64 "\n", size, addr, fuzz);
     }
-    ioaddrs.insert(addr);
+    if (seen_irq) ioaddrs.insert(addr);
     *val = fuzz;
-    trace.push_back(make_io_rlog(pc,addr,fuzz));
+    if (seen_irq) trace.push_back(make_io_rlog(pc,addr,fuzz));
     if (use_consistent_io) {
         cached_ioreads[addr] = fuzz;
     }
