@@ -1,0 +1,79 @@
+regs:
+    - 0
+    - 0
+    - 0x1380
+    - 0
+    - 0xc03f800c
+    - 0xc01c1a94
+    - 0xc03d6000
+    - 0xc04147d3
+    - 0xc03d6000
+    - 0xc04147d3
+    - 0xc03d6000
+    - 0xc03d6000
+    - 0x1
+    - 0xc03d7fa8
+    - 0xc000f28c
+    - 0xc0018b88
+daif: 0x280
+cp15.scr_el3: 0
+cp15.hcr_el2: 0
+cp15.dacr_ns: 0x15
+cp15.dacr_s: 0
+cp15.ttbr0_el:
+    - 0
+    - 0x6e9e006a
+    - 0
+    - 0
+cp15.ttbr1_el:
+    - 0
+    - 0x4000406a
+    - 0
+    - 0
+cp15.sctlr_el:
+    - 0
+    - 0x10c5387d
+    - 0
+    - 0xc50078
+cp15.vbar_el:
+    - 0
+    - 0
+    - 0
+    - 0
+cp15.tpidr_el:
+    - 0
+    - 0x67c000
+    - 0
+    - 0
+cp15.tpidrprw_s: 0
+cp15.cpacr_el1: 0xf00000
+uncached_cpsr: 0x13
+features: 0x8211788f3
+spsr: 0x60000013
+banked_spsr:
+    - 0
+    - 0x60000013
+    - 0x60000193
+    - 0x20000093
+    - 0x60000193
+    - 0
+    - 0
+    - 0
+banked_r13:
+    - 0xbeb14710
+    - 0xc03d7fa8
+    - 0xc0414a4c
+    - 0xc0414a58
+    - 0xc0414a40
+    - 0
+    - 0
+    - 0
+banked_r14:
+    - 0x7f5a8
+    - 0xc000f28c
+    - 0xc000ddc0
+    - 0xc000de60
+    - 0xc000dc40
+    - 0
+    - 0
+    - 0

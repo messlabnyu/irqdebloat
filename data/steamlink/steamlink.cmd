@@ -1,0 +1,1 @@
+build/arm-softmmu/qemu-system-arm -machine rehosting,mem-map="MEM 0x1000000-0x12000000" -panda iofuzz2:mem=steamlink/mem,cpu=steamlink/reg.yaml,timeout=32,ncpu=128,dir=steamlinkirq -display none -cpu cortex-a9

@@ -1,0 +1,1 @@
+build/arm-softmmu/qemu-system-arm -machine rehosting,mem-map="MEM 0x40000000-0x80000000" -panda iofuzz2:mem=nuri.mem,cpu=nuri.yaml,timeout=32,nproc=128,dir=nuri_irq,consistent_io_prob=0.8 -display none -cpu cortex-a9

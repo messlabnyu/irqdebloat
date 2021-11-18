@@ -1,0 +1,1 @@
+build/arm-softmmu/qemu-system-arm -machine rehosting,mem-map="MEM 0x80000000-0x90000000" -panda iofuzz2:mem=snapshots/beaglebone.mem,cpu=snapshots/beaglebone.yaml,timeout=32,ncpu=128,dir=beagleirq -display none -cpu cortex-a8

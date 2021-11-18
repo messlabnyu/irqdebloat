@@ -1,0 +1,1 @@
+build/arm-softmmu/qemu-system-arm -M rehosting,mem-map="MEM 0x10000000-0x18000000" -panda iofuzz2:mem=sabrelite.mem,cpu=sabrelite.yaml,timeout=30,ncpu=128,dir=sabrelite_irq_dir -display none -cpu cortex-a9

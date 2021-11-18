@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Get the location of the LLVM compiled for PANDA, respecting environment variables.
-PANDA_LLVM_ROOT="${PANDA_LLVM_ROOT:-$(dirname $0)/../../llvm}"
+PANDA_LLVM_ROOT="${PANDA_LLVM_ROOT:-$(dirname $0)/../llvm}"
 PANDA_LLVM_BUILD="${PANDA_LLVM_BUILD:-Release}"
 PANDA_LLVM="$(/bin/readlink -f "${PANDA_LLVM_ROOT}/${PANDA_LLVM_BUILD}" 2>/dev/null)"
 
