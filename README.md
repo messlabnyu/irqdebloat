@@ -3,7 +3,7 @@
 IRQDebloat aims to automate the reverse engineering of hardware interrupt (IRQ) handlers, and gives user the option to disable the handlers they find unnecessary (or annoying).
 Especially in more complicated systems, IRQ handlers are often wrapped in multiple layers of chained handlers or sugars, and loaded dynamically during bootstrap.
 
-We first rehost the system onto [PANDA](https://panda.re). Then, we use coverage guided fuzzing to emulate and explore the interrupts. We'll then analyze the traces
+We first transfer the system state (a snapshot of RAM and the CPU registers) from a real system and resume execution in [PANDA](https://panda.re). Then, we use coverage guided fuzzing to emulate and explore the interrupts. We'll then analyze the traces
  with a new sematic diff algorithm to find out the handler addresses. In the end, we patch the firmware to log and/or disable each interrupt handlers.
 For more details, please refer to our paper which will also appear in Oakland S&P 2022.
 
