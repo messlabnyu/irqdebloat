@@ -10,6 +10,7 @@ For more details, please refer to our paper which will also appear in Oakland S&
 # Dataset
 
 |                   | Linux              | FreeBSD              | RiscOS                | VxWorks           | MMIO blacklist |
+| :---------------- | :----------------- | :------------------- | :-------------------- | :---------------- | :------------- |
 | Raspberry Pi      | `data/raspi/linux` | `data/raspi/freebsd` | `data/raspi/riscos`   | N/A               | `data/raspi/raspi.bl` |
 | BeagleBone        | `data/beaglebone/linux` | N/A             | N/A                   | N/A               | `data/beaglebone/beagle.bl` |
 | SABRE Lite        | `data/sabrelite/linux`  | N/A             | N/A                   | `data/sabrelite/vxworks` | `data/sabrelite/sabrelite.bl` |
@@ -24,7 +25,7 @@ LLVM 3.3 is required to build PANDA. Make sure to install it under repo root `ll
 run `fuzzer/build.sh` to build PANDA.
 
 Trace analysis depends on [Binary Ninja](https://binary.ninja). All scripts are tested on the Headless version.
-May require [Unicorn](https://www.unicorn-engine.org) on analyzing MIPS traces.
+May require [Unicorn](https://www.unicorn-engine.org) dependency when analyzing MIPS traces.
 
 # Run
 
@@ -42,14 +43,15 @@ May require [Unicorn](https://www.unicorn-engine.org) on analyzing MIPS traces.
 
 - **Preprocessing**
 
-  - **Find MMIO to block**: `iofuzztrace.py {trace_path} {output_dir}`
+  - **Find Frequently Accessed MMIO**: `iofuzztrace.py {trace_path} {output_dir}`
   - **Regroup MMIO sequences**: `iofuzztrace.py -l {mmio_blacklist} {trace_path} {output_dir}`
-  - **Replay MMIO**: `./trace.py [romulus|beagle|linux|freebsd|riscos|sabre|vxwork|nuri|steamlink|wrt] {output_dir} {cpu_dump} {mem_dump} -r {replay_dir} [-l {mmio_blacklist}]`
+  - **Replay MMIO**: `./trace.py {ostag} {output_dir} {cpu_dump} {mem_dump} -r {replay_dir} [-l {mmio_blacklist}]`
 
-- **Trace Analysis**: `./analyze/analysis.py {tracedir} {cpu_dump} {mem_dump} {outdir} [romulus|beagle|linux|freebsd|riscos|sabre|vxwork|nuri|steamlink|wrt]`
+- **Trace Analysis**: `./analyze/analysis.py {tracedir} {cpu_dump} {mem_dump} {outdir} {ostag}`
 
-- **Postprocessing**: `./analyze/div_spectrum.py {tracedir} {cpu_dump} {mem_dump} {outdir} [romulus|beagle|linux|freebsd|riscos|sabre|vxwork|nuri|steamlink|wrt]`
+- **Postprocessing**: `./analyze/div_spectrum.py {tracedir} {cpu_dump} {mem_dump} {outdir} {ostag}`
 
+`ostag: [romulus|beagle|linux|freebsd|riscos|sabre|vxwork|nuri|steamlink|wrt]`
 
 ## Patch Firmware
 
