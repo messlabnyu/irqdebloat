@@ -50,4 +50,4 @@ CC=clang-8 CXX=clang++-8 "$(dirname $0)/configure" \
     $LLVM_BIT \
     "$@"
 
-#make -j ${PANDA_NPROC:-$(nproc || sysctl -n hw.ncpu)}
+make -j ${PANDA_NPROC:-$(nproc || sysctl -n hw.ncpu)}
