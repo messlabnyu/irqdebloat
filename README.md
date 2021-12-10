@@ -19,13 +19,15 @@ For more details, please refer to our paper which will also appear in Oakland S&
 | WRT54GL           | `data/wrt/linux`   | N/A                  | N/A                   | N/A               | N/A |
 | SteamLink         | `data/steamlink/linux`  | N/A             | N/A                   | N/A               | N/A |
 
+<sup> * Some of memory dump files are split into multiple parts to fit in 100MB size limit. use `cat mem.gz_part.*>mem.gz` to reassemble </sup>
+
 # Build
 
-LLVM 3.3 is required to build PANDA. Make sure to install it under repo root `llvm` dir, and then 
+LLVM 3.3 is required to build PANDA (`fuzzer/buildllvm.sh`). Make sure to install it under repo root `llvm` dir, and then 
 run `fuzzer/build.sh` to build PANDA.
 
-Trace analysis depends on [Binary Ninja](https://binary.ninja). All scripts are tested on the Headless version.
-May require [Unicorn](https://www.unicorn-engine.org) dependency when analyzing MIPS traces.
+Trace analysis depends on [Binary Ninja (Headless)](https://binary.ninja). All scripts are tested on the Headless version.
+May require [Unicorn](https://www.unicorn-engine.org) dependency when analyzing MIPS traces. Currently support Arm32 and MIPS Rev.1.
 
 # Run
 
