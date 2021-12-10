@@ -5,6 +5,7 @@ Especially in more complicated systems, IRQ handlers are often wrapped in multip
 
 We first transfer the system state (a snapshot of RAM and the CPU registers) from a real system and resume execution in [PANDA](https://panda.re). Then, we use coverage guided fuzzing to emulate and explore the interrupts. We'll then analyze the traces
  with a new sematic diff algorithm to find out the handler addresses. In the end, we patch the firmware to log and/or disable each interrupt handlers.
+Currently support Arm32 and MIPS Rev.1.
 For more details, please refer to our paper which will also appear in Oakland S&P 2022.
 
 # Dataset
@@ -26,8 +27,8 @@ For more details, please refer to our paper which will also appear in Oakland S&
 LLVM 3.3 is required to build PANDA (`fuzzer/buildllvm.sh`). Make sure to install it under repo root `llvm` dir, and then 
 run `fuzzer/build.sh` to build PANDA.
 
-Trace analysis depends on [Binary Ninja (Headless)](https://binary.ninja). All scripts are tested on the Headless version.
-May require [Unicorn](https://www.unicorn-engine.org) dependency when analyzing MIPS traces. Currently support Arm32 and MIPS Rev.1.
+Trace analysis depends on [Binary Ninja](https://binary.ninja). All scripts are tested on the _Headless_ version.
+May require [Unicorn](https://www.unicorn-engine.org) dependency when analyzing MIPS traces.
 
 # Run
 
@@ -39,7 +40,13 @@ May require [Unicorn](https://www.unicorn-engine.org) dependency when analyzing 
 
 ## Explore Interrupts
 
-- **Coverge Guided Fuzzing**: `arm-softmmu/qemu-system-arm -machine rehosting,mem-map="MEM {physical_ram_start}-{physical_ram_end}[;Mem ...]" -panda iofuzz2:mem={mem_dump}[|multi_mem_dumps],cpu={cpu_dump},timeout=32,ncpu=128,dir={output_dir} -display none -cpu {cpu_model}`
+- **Coverge Guided Fuzzing**:
+```
+arm-softmmu/qemu-system-arm \
+  -machine rehosting,mem-map="MEM {physical_ram_start}-{physical_ram_end}[;Mem ...]" \
+  -panda iofuzz2:mem={mem_dump}[|multi_mem_dumps],cpu={cpu_dump},timeout=32,ncpu=128,dir={output_dir}[,consistent_io_prob=0.8] \
+  -display none -cpu {cpu_model}
+```
 
 ## Analyze Traces
 
